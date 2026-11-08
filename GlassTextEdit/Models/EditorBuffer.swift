@@ -54,7 +54,7 @@ final class EditorBuffer: Identifiable {
         }
 
         self.encoding = encoding
-        let controller = TextController(text: text)
+        let controller = TextController(text: text, language: SyntaxLanguage(url: url))
         content = .text(controller)
         controller.buffer = self
     }

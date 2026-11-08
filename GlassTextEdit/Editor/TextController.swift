@@ -7,8 +7,9 @@ final class TextController: NSObject, NSTextViewDelegate {
     let scrollView: NSScrollView
     let textView: NSTextView
     weak var buffer: EditorBuffer?
+    private var highlighter: SyntaxHighlighter?
 
-    init(text: String) {
+    init(text: String, language: SyntaxLanguage?) {
         scrollView = NSTextView.scrollableTextView()
         textView = scrollView.documentView as! NSTextView
         super.init()
@@ -43,9 +44,15 @@ final class TextController: NSObject, NSTextViewDelegate {
         textView.textStorage?.addAttribute(.paragraphStyle, value: paragraph, range: NSRange(location: 0, length: (text as NSString).length))
         textView.setSelectedRange(NSRange(location: 0, length: 0))
         textView.delegate = self
+
+        if let language {
+            highlighter = SyntaxHighlighter(textView: textView, language: language)
+            highlighter?.highlightNow()
+        }
     }
 
     func textDidChange(_ notification: Notification) {
+        highlighter?.textDidChange()
         if buffer?.isDirty == false {
             buffer?.isDirty = true
         }
