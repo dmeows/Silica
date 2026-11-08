@@ -10,6 +10,10 @@ final class WorkspaceModel {
     let root: FileNode
 
     var selection: URL?
+    /// The last file asked to be shown in the tree; `revealCount` changes on every
+    /// request so the tree scrolls even when the same file is revealed twice.
+    private(set) var revealedURL: URL?
+    private(set) var revealCount = 0
     var isSidebarVisible = true
     private(set) var isQuickOpenVisible = false
     let quickOpen: QuickOpenModel
@@ -95,6 +99,33 @@ final class WorkspaceModel {
     func openFromQuickOpen(_ url: URL) {
         hideQuickOpen()
         open(url)
+        reveal(url)
+    }
+
+    /// Expands the folders above `url` so its row exists, selects it and asks the
+    /// tree to scroll to it.
+    func reveal(_ url: URL) {
+        let rootComponents = rootURL.standardizedFileURL.pathComponents
+        let components = url.standardizedFileURL.pathComponents
+        guard components.starts(with: rootComponents) else { return }
+        var current = root
+        for name in components.dropFirst(rootComponents.count).dropLast() {
+            var next = current.children?.first { $0.name == name }
+            if next == nil {
+                // The folder may have appeared since the tree last read the disk.
+                current.reload()
+                next = current.children?.first { $0.name == name }
+            }
+            guard let folder = next, folder.isDirectory else { return }
+            if !folder.isExpanded { folder.isExpanded = true }
+            current = folder
+        }
+        if current.children?.contains(where: { $0.url == url }) == false {
+            current.reload()
+        }
+        selection = url
+        revealedURL = url
+        revealCount += 1
     }
 
     func refresh() {

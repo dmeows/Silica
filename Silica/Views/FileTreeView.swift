@@ -16,33 +16,44 @@ struct FileTreeView: View {
             // Above the list, which reaches up underneath this row (see below).
             .zIndex(1)
 
-            List(selection: $workspace.selection) {
-                if let children = workspace.root.children, !children.isEmpty {
-                    // A flat list of the visible nodes, each indented by its depth, so the
-                    // rows can draw their own compact disclosure chevrons.
-                    ForEach(visibleRows(in: children), id: \.node.id) { row in
-                        FileNodeRow(node: row.node, depth: row.depth, workspace: workspace)
+            ScrollViewReader { proxy in
+                List(selection: $workspace.selection) {
+                    if let children = workspace.root.children, !children.isEmpty {
+                        // A flat list of the visible nodes, each indented by its depth, so the
+                        // rows can draw their own compact disclosure chevrons.
+                        ForEach(visibleRows(in: children), id: \.node.id) { row in
+                            FileNodeRow(node: row.node, depth: row.depth, workspace: workspace)
+                                .id(row.node.url)
+                        }
+                    } else {
+                        Text("This project is empty")
+                            .foregroundStyle(.secondary)
+                            .selectionDisabled()
                     }
-                } else {
-                    Text("This project is empty")
-                        .foregroundStyle(.secondary)
-                        .selectionDisabled()
+                }
+                .listStyle(.sidebar)
+                .scrollContentBackground(.hidden)
+                .scrollIndicators(.never)
+                // ← / → collapse and expand folders, as the system outline did.
+                .onKeyPress(.rightArrow) { workspace.setSelectedFolderExpanded(true) ? .handled : .ignored }
+                .onKeyPress(.leftArrow) { workspace.setSelectedFolderExpanded(false) ? .handled : .ignored }
+                // Compact, editor-style rows.
+                .environment(\.sidebarRowSize, .small)
+                .environment(\.defaultMinListRowHeight, 22)
+                // The sidebar list style has a fixed top inset that content margins don't
+                // change. Pull the list up by most of it and clip, so rows start closer to
+                // the title bar and scrolled rows still disappear at its bottom edge.
+                .padding(.top, -WorkspaceLayout.sidebarListTopTrim)
+                .clipped()
+                // Quick Open reveals the file it opened; wait a turn so newly
+                // expanded folders have rows to scroll to.
+                .onChange(of: workspace.revealCount) {
+                    guard let url = workspace.revealedURL else { return }
+                    DispatchQueue.main.async {
+                        withAnimation(.snappy) { proxy.scrollTo(url, anchor: .center) }
+                    }
                 }
             }
-            .listStyle(.sidebar)
-            .scrollContentBackground(.hidden)
-            .scrollIndicators(.never)
-            // ← / → collapse and expand folders, as the system outline did.
-            .onKeyPress(.rightArrow) { workspace.setSelectedFolderExpanded(true) ? .handled : .ignored }
-            .onKeyPress(.leftArrow) { workspace.setSelectedFolderExpanded(false) ? .handled : .ignored }
-            // Compact, editor-style rows.
-            .environment(\.sidebarRowSize, .small)
-            .environment(\.defaultMinListRowHeight, 22)
-            // The sidebar list style has a fixed top inset that content margins don't
-            // change. Pull the list up by most of it and clip, so rows start closer to
-            // the title bar and scrolled rows still disappear at its bottom edge.
-            .padding(.top, -WorkspaceLayout.sidebarListTopTrim)
-            .clipped()
         }
         .onChange(of: workspace.selection) {
             workspace.handleSelectionChange()
