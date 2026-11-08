@@ -1,0 +1,138 @@
+import AppKit
+import SwiftUI
+
+/// Window root for a workspace: resolves the folder bookmark, then shows the editor.
+struct WorkspaceWindow: View {
+    let folderID: RecentFolder.ID?
+
+    @Environment(\.openWindow) private var openWindow
+    @Environment(\.dismissWindow) private var dismissWindow
+    @Environment(\.dismiss) private var dismiss
+    @State private var workspace: WorkspaceModel?
+    @State private var errorMessage: String?
+
+    @MainActor private static var openCount = 0
+
+    var body: some View {
+        Group {
+            if let workspace {
+                WorkspaceView(workspace: workspace)
+            } else if let errorMessage {
+                ContentUnavailableView {
+                    Label("Can’t Open Folder", systemImage: "exclamationmark.triangle")
+                } description: {
+                    Text(errorMessage)
+                } actions: {
+                    Button("Open Folder…") { FolderOpener(openWindow: openWindow).chooseAndOpen() }
+                        .buttonStyle(.glassProminent)
+                }
+                .frame(minWidth: 500, minHeight: 360)
+            } else {
+                // Must be a real view: onAppear doesn't fire on an empty Group.
+                ProgressView()
+                    .frame(minWidth: 500, minHeight: 360)
+            }
+        }
+        .onAppear {
+            Self.openCount += 1
+            dismissWindow(id: WindowID.welcome)
+            load()
+        }
+        .onDisappear {
+            workspace?.close()
+            Self.openCount -= 1
+            if Self.openCount == 0 {
+                openWindow(id: WindowID.welcome)
+            }
+        }
+    }
+
+    private func load() {
+        guard workspace == nil else { return }
+        guard let folderID else {
+            // e.g. a restored window that never had a folder: just close it.
+            dismiss()
+            return
+        }
+        do {
+            let url = try RecentFoldersStore.shared.resolveURL(for: folderID)
+            workspace = WorkspaceModel(rootURL: url)
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+}
+
+enum WorkspaceLayout {
+    /// Height of the title bar row that holds the traffic lights and the tabs.
+    static let titleBarHeight: CGFloat = 32
+    /// Room for the traffic lights when the sidebar is hidden.
+    static let trafficLightsWidth: CGFloat = 78
+    static let cardCornerRadius: CGFloat = 14
+    static let cardInset: CGFloat = 10
+    static let sidebarWidthRange: ClosedRange<Double> = 180...480
+}
+
+struct WorkspaceView: View {
+    @Bindable var workspace: WorkspaceModel
+    @AppStorage("sidebarWidth") private var sidebarWidth: Double = 260
+    @State private var dragStartWidth: Double?
+
+    var body: some View {
+        HStack(spacing: 0) {
+            if workspace.isSidebarVisible {
+                FileTreeView(workspace: workspace)
+                    .frame(width: sidebarWidth)
+                    .overlay(alignment: .trailing) { resizeHandle }
+                    .transition(.move(edge: .leading).combined(with: .opacity))
+            }
+            EditorArea(workspace: workspace)
+        }
+        .ignoresSafeArea(.container, edges: .top)
+        .frame(minWidth: 640, minHeight: 400)
+        .containerBackground(for: .window) {
+            VisualEffectView(.hudWindow)
+        }
+        .navigationTitle(workspace.name)
+        .focusedSceneValue(\.workspace, workspace)
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            workspace.refresh()
+        }
+    }
+
+    /// Invisible strip on the sidebar's trailing edge that resizes it.
+    private var resizeHandle: some View {
+        Color.clear
+            .frame(width: 8)
+            .contentShape(.rect)
+            .offset(x: 4)
+            .pointerStyle(.frameResize(position: .trailing))
+            .gesture(
+                DragGesture(minimumDistance: 1, coordinateSpace: .global)
+                    .onChanged { value in
+                        let start = dragStartWidth ?? sidebarWidth
+                        dragStartWidth = start
+                        let proposed = start + value.translation.width
+                        sidebarWidth = min(max(proposed, WorkspaceLayout.sidebarWidthRange.lowerBound),
+                                           WorkspaceLayout.sidebarWidthRange.upperBound)
+                    }
+                    .onEnded { _ in dragStartWidth = nil }
+            )
+    }
+}
+
+struct SidebarToggleButton: View {
+    let workspace: WorkspaceModel
+
+    var body: some View {
+        Button {
+            workspace.toggleSidebar()
+        } label: {
+            Image(systemName: "sidebar.left")
+                .frame(width: 18, height: 18)
+        }
+        .buttonStyle(.glass)
+        .buttonBorderShape(.circle)
+        .help(workspace.isSidebarVisible ? "Hide Sidebar (⌃⌘S)" : "Show Sidebar (⌃⌘S)")
+    }
+}
