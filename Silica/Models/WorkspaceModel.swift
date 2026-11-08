@@ -159,7 +159,13 @@ final class WorkspaceModel {
 
     func open(_ url: URL) {
         if buffers[url] == nil {
-            buffers[url] = EditorBuffer(url: url)
+            let buffer = EditorBuffer(url: url)
+            // Links in a Markdown preview open other project files here, like Quick Open.
+            buffer.openFile = { [weak self] target in
+                self?.open(target)
+                self?.reveal(target)
+            }
+            buffers[url] = buffer
         }
         if !openTabs.contains(url) {
             if let active = activeTab, let index = openTabs.firstIndex(of: active) {

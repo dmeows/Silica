@@ -117,6 +117,50 @@ final class TextController: NSObject, NSTextViewDelegate {
     func textViewDidChangeSelection(_ notification: Notification) {
         lineNumbers?.setNeedsRedraw()
     }
+
+    // MARK: Lines (shared with the Markdown preview)
+
+    /// The 1-based line shown at the top of the editor.
+    func topVisibleLine() -> Int {
+        guard let layoutManager = textView.textLayoutManager,
+              let contentManager = layoutManager.textContentManager else { return 1 }
+        let y = max(0, textView.visibleRect.minY - textView.textContainerOrigin.y)
+        guard let fragment = layoutManager.textLayoutFragment(for: CGPoint(x: 0, y: y)) else { return 1 }
+        let offset = contentManager.offset(from: layoutManager.documentRange.location, to: fragment.rangeInElement.location)
+        let text = textView.string as NSString
+        var line = 1
+        var index = 0
+        while index < min(offset, text.length) {
+            let range = text.lineRange(for: NSRange(location: index, length: 0))
+            guard NSMaxRange(range) <= offset else { break }
+            line += 1
+            index = NSMaxRange(range)
+        }
+        return line
+    }
+
+    /// Scrolls so `line` (1-based) is at the top; with `placingCursor`, also puts the
+    /// insertion point at its start.
+    func scroll(toLine line: Int, placingCursor: Bool = false) {
+        let text = textView.string as NSString
+        var offset = 0
+        var current = 1
+        while current < line, offset < text.length {
+            offset = NSMaxRange(text.lineRange(for: NSRange(location: offset, length: 0)))
+            current += 1
+        }
+        if placingCursor {
+            textView.setSelectedRange(NSRange(location: offset, length: 0))
+        }
+        guard let layoutManager = textView.textLayoutManager,
+              let contentManager = layoutManager.textContentManager,
+              let location = contentManager.location(layoutManager.documentRange.location, offsetBy: offset),
+              let range = NSTextRange(location: layoutManager.documentRange.location, end: location) else { return }
+        layoutManager.ensureLayout(for: range)
+        if let fragment = layoutManager.textLayoutFragment(for: location) {
+            textView.scroll(NSPoint(x: 0, y: fragment.layoutFragmentFrame.minY))
+        }
+    }
 }
 
 /// Hosts whichever buffer's scroll view is active.

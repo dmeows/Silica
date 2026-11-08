@@ -7,6 +7,22 @@ final class KeyWorkspace: ObservableObject {
     static let shared = KeyWorkspace()
     @Published var current: WorkspaceModel?
     private init() {}
+
+    private var keyMonitor: Any?
+
+    /// ⇧⌘V toggles a Markdown tab between source and preview. Handled here as well
+    /// as in the View menu because a menu item bound to ⇧⌘V didn't reliably win
+    /// over Edit > Paste (⌘V) for the same key.
+    func installKeyboardShortcuts() {
+        guard keyMonitor == nil else { return }
+        keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            let flags = event.modifierFlags.intersection([.command, .shift, .option, .control])
+            guard flags == [.command, .shift], event.charactersIgnoringModifiers?.lowercased() == "v",
+                  let buffer = self?.current?.activeBuffer, buffer.isMarkdown else { return event }
+            buffer.togglePreview()
+            return nil
+        }
+    }
 }
 
 /// Invisible view that reports when its window becomes or stops being key.

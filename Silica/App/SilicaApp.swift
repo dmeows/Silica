@@ -10,6 +10,7 @@ struct SilicaApp: App {
     init() {
         EditorSettings.shared.installKeyboardShortcuts()
         MenuShortcutRefresh.install()
+        KeyWorkspace.shared.installKeyboardShortcuts()
     }
 
     var body: some Scene {

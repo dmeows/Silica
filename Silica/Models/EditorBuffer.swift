@@ -22,6 +22,14 @@ final class EditorBuffer: Identifiable {
 
     var isDirty = false
 
+    /// Markdown files can switch between their source and a rendered preview.
+    let isMarkdown: Bool
+    private(set) var isShowingPreview = false
+    /// Created the first time the preview is shown, then kept with the tab.
+    @ObservationIgnored private(set) var preview: MarkdownPreview?
+    /// Opens a project file a preview link points to.
+    @ObservationIgnored var openFile: ((URL) -> Void)?
+
     var id: URL { url }
     var name: String { url.lastPathComponent }
 
@@ -43,6 +51,7 @@ final class EditorBuffer: Identifiable {
 
     init(url: URL) {
         self.url = url
+        self.isMarkdown = SyntaxLanguage(url: url) == .markdown
 
         let size = (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize).map(Int64.init) ?? 0
 
@@ -83,6 +92,47 @@ final class EditorBuffer: Identifiable {
         let controller = TextController(text: text, language: SyntaxLanguage(url: url))
         content = .text(controller)
         controller.buffer = self
+    }
+
+    // MARK: Markdown preview
+
+    func togglePreview() {
+        setShowingPreview(!isShowingPreview)
+    }
+
+    /// Switches between source and preview, keeping roughly the same place in the
+    /// document. `editLine` (from a double-click) puts the cursor on that source line.
+    func setShowingPreview(_ show: Bool, editLine: Int? = nil) {
+        guard isMarkdown, let controller = textController, show != isShowingPreview else { return }
+        if show {
+            let preview = self.preview ?? makePreview(for: controller)
+            self.preview = preview
+            preview.show(markdown: controller.textView.string, line: controller.topVisibleLine())
+            isShowingPreview = true
+        } else if let editLine {
+            isShowingPreview = false
+            DispatchQueue.main.async { controller.scroll(toLine: editLine, placingCursor: true) }
+        } else {
+            preview?.topVisibleLine { [weak self] line in
+                self?.isShowingPreview = false
+                DispatchQueue.main.async { controller.scroll(toLine: line) }
+            }
+        }
+    }
+
+    private func makePreview(for controller: TextController) -> MarkdownPreview {
+        let preview = MarkdownPreview(fileURL: url)
+        preview.onOpenFile = { [weak self] url in self?.openFile?(url) }
+        preview.onEditLine = { [weak self] line in self?.setShowingPreview(false, editLine: line) }
+        preview.onType = { [weak self] characters in
+            guard let self else { return }
+            self.isShowingPreview = false
+            // Once the editor is back in the card, type the character there.
+            DispatchQueue.main.async {
+                controller.textView.insertText(characters, replacementRange: controller.textView.selectedRange())
+            }
+        }
+        return preview
     }
 
     func save() throws {

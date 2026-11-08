@@ -13,6 +13,10 @@ struct EditorArea: View {
                 }
                 EditorTabBar(workspace: workspace)
                 Spacer(minLength: 0)
+                if let buffer = workspace.activeBuffer, buffer.isMarkdown {
+                    MarkdownModeToggle(buffer: buffer)
+                        .padding(.trailing, WorkspaceLayout.cardInset + 4)
+                }
             }
             .frame(height: WorkspaceLayout.titleBarHeight)
 
@@ -144,7 +148,11 @@ private struct BufferView: View {
     var body: some View {
         switch buffer.content {
         case .text(let controller):
-            TextViewHost(controller: controller)
+            if buffer.isShowingPreview, let preview = buffer.preview {
+                MarkdownPreviewHost(preview: preview)
+            } else {
+                TextViewHost(controller: controller)
+            }
         case .image(let file):
             ImagePreview(file: file)
         case .binary:
@@ -166,6 +174,42 @@ private struct BufferView: View {
                 description: Text(message)
             )
         }
+    }
+}
+
+// MARK: - Markdown
+
+/// Source / Preview switch for Markdown tabs, in the quiet icon style of the other
+/// title bar buttons; the current mode is drawn in the primary color on a soft fill.
+private struct MarkdownModeToggle: View {
+    let buffer: EditorBuffer
+
+    var body: some View {
+        HStack(spacing: 2) {
+            option("doc.plaintext", help: "Show Markdown (⇧⌘V)", isOn: !buffer.isShowingPreview) {
+                buffer.setShowingPreview(false)
+            }
+            option("eye", help: "Show Preview (⇧⌘V)", isOn: buffer.isShowingPreview) {
+                buffer.setShowingPreview(true)
+            }
+        }
+    }
+
+    private func option(_ symbol: String, help: String, isOn: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: symbol)
+                .frame(width: 26, height: 22)
+                .contentShape(.rect)
+        }
+        .buttonStyle(.borderless)
+        .foregroundStyle(isOn ? .primary : .secondary)
+        .background {
+            if isOn {
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .fill(.primary.opacity(0.08))
+            }
+        }
+        .help(help)
     }
 }
 

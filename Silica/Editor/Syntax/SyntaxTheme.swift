@@ -17,20 +17,20 @@ nonisolated enum SyntaxTheme {
     }
 
     static func color(for kind: TokenKind) -> NSColor {
+        colors[kind]!
+    }
+
+    /// The light/dark hex pair for a token kind, shared with the Markdown preview's CSS.
+    static func hexPair(for kind: TokenKind) -> (light: UInt32, dark: UInt32) {
         switch kind {
-        case .keyword: keyword
-        case .type: type
-        case .string: string
-        case .number: number
-        case .comment: comment
-        case .attribute: attribute
-        case .preprocessor: preprocessor
-        case .function: function
-        case .property: property
-        case .tag: tag
-        case .variable: variable
-        case .heading: heading
-        case .link: link
+        case .keyword, .preprocessor: purple
+        case .type: yellow
+        case .string: green
+        case .number, .attribute: orange
+        case .comment: gray
+        case .function: blue
+        case .property, .tag, .variable, .heading: red
+        case .link: cyan
         }
     }
 
@@ -40,7 +40,7 @@ nonisolated enum SyntaxTheme {
     //   One Dark:  purple C678DD, blue 61AFEF, red E06C75, green 98C379,
     //              orange D19A66, yellow E5C07B, cyan 56B6C2, comment 5C6370 (see `gray`)
     private static let purple = (light: 0xA626A4 as UInt32, dark: 0xC678DD as UInt32)
-    private static let blue = (light: 0x4078F2 as UInt32, dark: 0x61AFEF as UInt32)
+    static let blue = (light: 0x4078F2 as UInt32, dark: 0x61AFEF as UInt32)
     private static let red = (light: 0xE45649 as UInt32, dark: 0xE06C75 as UInt32)
     private static let green = (light: 0x50A14F as UInt32, dark: 0x98C379 as UInt32)
     private static let orange = (light: 0x986801 as UInt32, dark: 0xD19A66 as UInt32)
@@ -50,19 +50,9 @@ nonisolated enum SyntaxTheme {
     // nearly vanishes on the glass card, so dark mode uses a lighter shade of it.
     private static let gray = (light: 0xA0A1A7 as UInt32, dark: 0x9DA5B3 as UInt32)
 
-    private static let keyword = dynamic(purple)
-    private static let type = dynamic(yellow)
-    private static let string = dynamic(green)
-    private static let number = dynamic(orange)
-    private static let comment = dynamic(gray)
-    private static let attribute = dynamic(orange)
-    private static let preprocessor = dynamic(purple)
-    private static let function = dynamic(blue)
-    private static let property = dynamic(red)
-    private static let tag = dynamic(red)
-    private static let variable = dynamic(red)
-    private static let heading = dynamic(red)
-    private static let link = dynamic(cyan)
+    private static let colors = Dictionary(
+        uniqueKeysWithValues: TokenKind.allCases.map { ($0, dynamic(hexPair(for: $0))) }
+    )
 
     private static func dynamic(_ pair: (light: UInt32, dark: UInt32)) -> NSColor {
         dynamic(light: pair.light, dark: pair.dark)

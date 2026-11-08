@@ -66,6 +66,15 @@ struct AppCommands: Commands {
             Button("Refresh Explorer") { workspace?.refresh() }
                 .keyboardShortcut("r", modifiers: [.command, .shift])
                 .disabled(workspace == nil)
+
+            Divider()
+
+            // ⇧⌘V itself is handled by KeyWorkspace.installKeyboardShortcuts().
+            Button(workspace?.activeBuffer?.isShowingPreview == true ? "Show Markdown" : "Show Preview") {
+                workspace?.activeBuffer?.togglePreview()
+            }
+            .keyboardShortcut("v", modifiers: [.command, .shift])
+            .disabled(workspace?.activeBuffer?.isMarkdown != true)
         }
 
         CommandGroup(after: .sidebar) {

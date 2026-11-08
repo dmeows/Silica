@@ -48,6 +48,26 @@ nonisolated enum SyntaxLanguage: String, Sendable, CaseIterable {
         }
     }
 
+    /// The language named on a Markdown code fence, e.g. ```swift or ```js.
+    init?(fenceName: String) {
+        let name = fenceName.lowercased().trimmingCharacters(in: .whitespaces)
+        let aliases: [String: String] = [
+            "javascript": "js", "typescript": "ts", "python": "py", "ruby": "rb", "rust": "rs",
+            "objc": "m", "objective-c": "m", "objectivec": "m", "c++": "cpp", "csharp": "cs",
+            "c#": "cs", "kotlin": "kt", "shell": "sh", "console": "sh", "yaml": "yml",
+            "markdown": "md", "golang": "go",
+        ]
+        switch name {
+        case "dockerfile", "docker": self = .dockerfile
+        case "makefile", "make": self = .makefile
+        default:
+            guard !name.isEmpty, let language = SyntaxLanguage(url: URL(filePath: "x." + (aliases[name] ?? name))) else {
+                return nil
+            }
+            self = language
+        }
+    }
+
     var grammar: SyntaxGrammar {
         switch self {
         case .swift: Grammars.swift
