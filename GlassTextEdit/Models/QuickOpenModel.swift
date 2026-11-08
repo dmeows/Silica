@@ -26,7 +26,10 @@ final class QuickOpenModel {
     var selectedIndex = 0
     private(set) var isIndexing = false
 
-    @ObservationIgnored private var items: [QuickOpenItem] = []
+    @ObservationIgnored private var items: [QuickOpenItem] = [] {
+        didSet { indexedURLs = Set(items.map(\.url)) }
+    }
+    @ObservationIgnored private var indexedURLs: Set<URL> = []
     @ObservationIgnored private var indexTask: Task<Void, Never>?
     /// Most recently opened files first.
     @ObservationIgnored private(set) var recentFiles: [URL] = []
@@ -69,7 +72,7 @@ final class QuickOpenModel {
             results = defaultResults()
         } else {
             var matches: [(QuickOpenItem, FuzzyMatch)] = []
-            for item in items {
+            for item in items + ignoredRecentItems() {
                 if let match = FuzzyMatcher.match(query, in: item) {
                     matches.append((item, match))
                 }
@@ -88,7 +91,7 @@ final class QuickOpenModel {
 
     /// With no query: recently opened files (except the current one), then the rest by path.
     private func defaultResults() -> [QuickOpenResult] {
-        let byURL = Dictionary(items.map { ($0.url, $0) }, uniquingKeysWith: { first, _ in first })
+        let byURL = Dictionary((items + ignoredRecentItems()).map { ($0.url, $0) }, uniquingKeysWith: { first, _ in first })
         let recent = recentFiles
             .filter { $0 != activeFile }
             .compactMap { byURL[$0] }
@@ -98,6 +101,18 @@ final class QuickOpenModel {
             + rest.prefix(Self.resultLimit).map { QuickOpenResult(item: $0, positions: [], isRecent: false) })
             .prefix(Self.resultLimit)
             .map { $0 }
+    }
+
+    /// Recently opened files the index left out (e.g. gitignored), so they can still
+    /// be found again, as in VS Code.
+    private func ignoredRecentItems() -> [QuickOpenItem] {
+        let rootPath = rootURL.path(percentEncoded: false).trimmingTrailingSlash
+        return recentFiles.compactMap { url in
+            guard !indexedURLs.contains(url) else { return nil }
+            let path = url.path(percentEncoded: false)
+            guard path.hasPrefix(rootPath + "/"), FileManager.default.fileExists(atPath: path) else { return nil }
+            return QuickOpenItem(url: url, path: String(path.dropFirst(rootPath.count + 1)))
+        }
     }
 
     // MARK: Index
@@ -123,11 +138,12 @@ final class QuickOpenModel {
     }
 }
 
-/// Lists a project's files for Quick Open.
+/// Lists a project's files for Quick Open, leaving out what git would ignore.
 nonisolated enum ProjectFileIndex {
     static let maxFiles = 50_000
 
-    /// Folders that are version-control metadata, dependencies or build output.
+    /// Always skipped, even without a .gitignore: version-control metadata,
+    /// dependencies and build output.
     static let skippedFolders: Set<String> = [
         ".git", ".hg", ".svn", "node_modules", ".build", ".swiftpm", "DerivedData", "Pods",
     ]
@@ -141,22 +157,41 @@ nonisolated enum ProjectFileIndex {
             errorHandler: { _, _ in true }
         ) else { return [] }
 
+        // Ignore rules in effect inside each folder, keyed by project-relative path.
+        // The enumerator visits a folder before its contents, so a parent's entry
+        // always exists when a child needs it.
+        let rootRules = GitIgnoreStack()
+            .adding(GitIgnoreFile(base: "", url: root.appending(path: ".git/info/exclude")))
+            .adding(GitIgnoreFile(base: "", url: root.appending(path: ".gitignore")))
+        var rulesByFolder: [String: GitIgnoreStack] = ["": rootRules]
+
         var items: [QuickOpenItem] = []
         for case let url as URL in enumerator {
             if Task.isCancelled { return [] }
+            // Folder URLs from the enumerator end in "/"; rules and keys expect none.
+            let path = url.path(percentEncoded: false).trimmingTrailingSlash
+            guard path.hasPrefix(rootPath + "/") else { continue }
+            let relative = String(path.dropFirst(rootPath.count + 1))
             let name = url.lastPathComponent
+            let parent = relative.lastIndex(of: "/").map { String(relative[..<$0]) } ?? ""
+            let rules = rulesByFolder[parent] ?? rootRules
+
             let isDirectory = (try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) ?? false
             if isDirectory {
-                if skippedFolders.contains(name) { enumerator.skipDescendants() }
+                if skippedFolders.contains(name) || rules.isIgnored(relative, isDirectory: true) {
+                    enumerator.skipDescendants()
+                } else {
+                    rulesByFolder[relative] = rules.adding(
+                        GitIgnoreFile(base: relative, url: url.appending(path: ".gitignore"))
+                    )
+                }
                 continue
             }
-            if name == ".DS_Store" { continue }
+            if name == ".DS_Store" || rules.isIgnored(relative, isDirectory: false) { continue }
 
-            let path = url.path(percentEncoded: false)
-            guard path.hasPrefix(rootPath + "/") else { continue }
             // Same form as the explorer tree's URLs, so tabs aren't opened twice.
             let normalized = URL(filePath: path, directoryHint: .notDirectory)
-            items.append(QuickOpenItem(url: normalized, path: String(path.dropFirst(rootPath.count + 1))))
+            items.append(QuickOpenItem(url: normalized, path: relative))
             if items.count >= maxFiles { break }
         }
         items.sort { $0.path.localizedStandardCompare($1.path) == .orderedAscending }
