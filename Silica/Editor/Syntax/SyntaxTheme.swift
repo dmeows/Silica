@@ -1,6 +1,6 @@
 import AppKit
 
-/// Xcode-inspired colors that adapt to light and dark appearance.
+/// Syntax colors from Atom's One Light (light appearance) and One Dark (dark appearance).
 nonisolated enum SyntaxTheme {
     static let plain = NSColor.labelColor
 
@@ -34,19 +34,39 @@ nonisolated enum SyntaxTheme {
         }
     }
 
-    private static let keyword = dynamic(light: 0x9B2393, dark: 0xFC5FA3)
-    private static let type = dynamic(light: 0x0B4F79, dark: 0x5DD8FF)
-    private static let string = dynamic(light: 0xC41A16, dark: 0xFC6A5D)
-    private static let number = dynamic(light: 0x1C00CF, dark: 0xD0BF69)
-    private static let comment = dynamic(light: 0x5D6C79, dark: 0x9AA5B1)
-    private static let attribute = dynamic(light: 0x815F03, dark: 0xD39A64)
-    private static let preprocessor = dynamic(light: 0x643820, dark: 0xFD8F3F)
-    private static let function = dynamic(light: 0x326D74, dark: 0x67B7A4)
-    private static let property = dynamic(light: 0x3E6D9C, dark: 0x9CDCFE)
-    private static let tag = dynamic(light: 0x0F68A0, dark: 0x5DD8FF)
-    private static let variable = dynamic(light: 0x326D74, dark: 0x67B7A4)
-    private static let heading = dynamic(light: 0x9B2393, dark: 0xFC5FA3)
-    private static let link = dynamic(light: 0x0E0EFF, dark: 0x6699FF)
+    // Atom's One Light / One Dark palettes:
+    //   One Light: purple A626A4, blue 4078F2, red E45649, green 50A14F,
+    //              orange 986801, yellow C18401, cyan 0184BC, comment A0A1A7
+    //   One Dark:  purple C678DD, blue 61AFEF, red E06C75, green 98C379,
+    //              orange D19A66, yellow E5C07B, cyan 56B6C2, comment 5C6370 (see `gray`)
+    private static let purple = (light: 0xA626A4 as UInt32, dark: 0xC678DD as UInt32)
+    private static let blue = (light: 0x4078F2 as UInt32, dark: 0x61AFEF as UInt32)
+    private static let red = (light: 0xE45649 as UInt32, dark: 0xE06C75 as UInt32)
+    private static let green = (light: 0x50A14F as UInt32, dark: 0x98C379 as UInt32)
+    private static let orange = (light: 0x986801 as UInt32, dark: 0xD19A66 as UInt32)
+    private static let yellow = (light: 0xC18401 as UInt32, dark: 0xE5C07B as UInt32)
+    private static let cyan = (light: 0x0184BC as UInt32, dark: 0x56B6C2 as UInt32)
+    // One Dark's comment gray (5C6370) is meant for a near-black background and
+    // nearly vanishes on the glass card, so dark mode uses a lighter shade of it.
+    private static let gray = (light: 0xA0A1A7 as UInt32, dark: 0x9DA5B3 as UInt32)
+
+    private static let keyword = dynamic(purple)
+    private static let type = dynamic(yellow)
+    private static let string = dynamic(green)
+    private static let number = dynamic(orange)
+    private static let comment = dynamic(gray)
+    private static let attribute = dynamic(orange)
+    private static let preprocessor = dynamic(purple)
+    private static let function = dynamic(blue)
+    private static let property = dynamic(red)
+    private static let tag = dynamic(red)
+    private static let variable = dynamic(red)
+    private static let heading = dynamic(red)
+    private static let link = dynamic(cyan)
+
+    private static func dynamic(_ pair: (light: UInt32, dark: UInt32)) -> NSColor {
+        dynamic(light: pair.light, dark: pair.dark)
+    }
 
     private static func dynamic(light: UInt32, dark: UInt32) -> NSColor {
         NSColor(name: nil) { appearance in
