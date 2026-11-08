@@ -9,6 +9,13 @@ nonisolated enum SyntaxTheme {
     static let lineNumber = dynamic(light: 0x9A9AA0, dark: 0x9C9CA2)
     static let currentLineNumber = dynamic(light: 0x3C3C43, dark: 0xF2F2F7)
 
+    /// Indent guides: a faint line that reads on the glass card in both appearances.
+    static let indentGuide = NSColor(name: nil) { appearance in
+        appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+            ? NSColor(white: 1, alpha: 0.12)
+            : NSColor(white: 0, alpha: 0.10)
+    }
+
     static func color(for kind: TokenKind) -> NSColor {
         switch kind {
         case .keyword: keyword

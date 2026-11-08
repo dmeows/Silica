@@ -5,15 +5,28 @@ import SwiftUI
 /// selection and scroll position survive switching tabs.
 final class TextController: NSObject, NSTextViewDelegate {
     let scrollView: NSScrollView
-    let textView: NSTextView
+    let textView: EditorTextView
     weak var buffer: EditorBuffer?
     private var highlighter: SyntaxHighlighter?
     private var lineNumbers: LineNumberRulerView?
 
     init(text: String, language: SyntaxLanguage?) {
-        scrollView = NSTextView.scrollableTextView()
-        textView = scrollView.documentView as! NSTextView
+        // Built by hand: `EditorTextView.scrollableTextView()` returned a TextKit 1 view,
+        // and the gutter and indent guides draw through TextKit 2.
+        scrollView = NSScrollView()
+        textView = EditorTextView(usingTextLayoutManager: true)
         super.init()
+
+        let contentSize = scrollView.contentSize
+        textView.frame = NSRect(origin: .zero, size: contentSize)
+        textView.minSize = .zero
+        textView.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: .greatestFiniteMagnitude)
+        textView.isVerticallyResizable = true
+        textView.isHorizontallyResizable = false
+        textView.autoresizingMask = [.width]
+        textView.textContainer?.widthTracksTextView = true
+        textView.textContainer?.containerSize = NSSize(width: contentSize.width, height: .greatestFiniteMagnitude)
+        scrollView.documentView = textView
 
         scrollView.drawsBackground = false
         // Trackpad and wheel scrolling still work; the bars are just never drawn.
@@ -40,13 +53,8 @@ final class TextController: NSObject, NSTextViewDelegate {
         textView.textColor = .labelColor
         textView.textContainerInset = NSSize(width: 8, height: 12)
 
-        let paragraph = NSMutableParagraphStyle()
-        paragraph.lineHeightMultiple = 1.15
-        textView.defaultParagraphStyle = paragraph
-        textView.typingAttributes[.paragraphStyle] = paragraph
-
         textView.string = text
-        textView.textStorage?.addAttribute(.paragraphStyle, value: paragraph, range: NSRange(location: 0, length: (text as NSString).length))
+        applyParagraphStyle(for: textView.font!)
         textView.setSelectedRange(NSRange(location: 0, length: 0))
         textView.delegate = self
 
@@ -71,13 +79,31 @@ final class TextController: NSObject, NSTextViewDelegate {
         .monospacedSystemFont(ofSize: size, weight: .regular)
     }
 
+    /// Line spacing, plus tab stops every `EditorTextView.tabWidth` columns of the
+    /// monospaced font, so tabs line up with space indentation and the indent guides.
+    private func applyParagraphStyle(for font: NSFont) {
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.lineHeightMultiple = 1.15
+        paragraph.tabStops = []
+        paragraph.defaultTabInterval = (" " as NSString).size(withAttributes: [.font: font]).width
+            * CGFloat(EditorTextView.tabWidth)
+        textView.defaultParagraphStyle = paragraph
+        textView.typingAttributes[.paragraphStyle] = paragraph
+        if let storage = textView.textStorage {
+            // Directly on the storage, so it isn't an undoable edit.
+            storage.addAttribute(.paragraphStyle, value: paragraph, range: NSRange(location: 0, length: storage.length))
+        }
+    }
+
     /// Restyles the text in place; this doesn't touch undo or mark the file dirty.
     @objc private func fontSizeDidChange() {
         let size = EditorSettings.shared.fontSize
         let font = Self.font(ofSize: size)
         textView.font = font
         textView.typingAttributes[.font] = font
+        applyParagraphStyle(for: font)
         lineNumbers?.setEditorFontSize(size)
+        textView.needsDisplay = true
     }
 
     func textDidChange(_ notification: Notification) {
