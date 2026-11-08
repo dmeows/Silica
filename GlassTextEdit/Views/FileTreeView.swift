@@ -5,7 +5,7 @@ struct FileTreeView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            // Title bar row: traffic lights, then the folder header, then the toggle.
+            // Title bar row: traffic lights, then the project header, then the toggle.
             HStack(spacing: 8) {
                 header
                 SidebarToggleButton(workspace: workspace)
@@ -22,7 +22,7 @@ struct FileTreeView: View {
                         FileNodeRow(node: node, workspace: workspace)
                     }
                 } else {
-                    Text("This folder is empty")
+                    Text("This project is empty")
                         .foregroundStyle(.secondary)
                         .selectionDisabled()
                 }

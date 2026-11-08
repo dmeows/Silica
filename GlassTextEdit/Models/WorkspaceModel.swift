@@ -3,7 +3,7 @@ import Foundation
 import Observation
 import SwiftUI
 
-/// State for one open folder window: the explorer tree and the open editor tabs.
+/// State for one open project window: the explorer tree and the open editor tabs.
 @Observable
 final class WorkspaceModel {
     let rootURL: URL

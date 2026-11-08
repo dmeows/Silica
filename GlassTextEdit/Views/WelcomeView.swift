@@ -5,8 +5,8 @@ struct WelcomeView: View {
     @Environment(\.openWindow) private var openWindow
     @State private var isDropTargeted = false
 
-    private var store: RecentFoldersStore { .shared }
-    private var opener: FolderOpener { FolderOpener(openWindow: openWindow) }
+    private var store: RecentProjectsStore { .shared }
+    private var opener: ProjectOpener { ProjectOpener(openWindow: openWindow) }
 
     var body: some View {
         HStack(spacing: 0) {
@@ -60,13 +60,13 @@ struct WelcomeView: View {
                     Button {
                         opener.chooseAndOpen()
                     } label: {
-                        Label("Open Folder…", systemImage: "folder.badge.plus")
+                        Label("Open Project…", systemImage: "folder.badge.plus")
                             .frame(maxWidth: .infinity)
                     }
                     .buttonStyle(.glassProminent)
                     .keyboardShortcut("o")
 
-                    if let last = store.folders.first {
+                    if let last = store.projects.first {
                         Button {
                             opener.open(last)
                         } label: {
@@ -81,7 +81,7 @@ struct WelcomeView: View {
             }
             .frame(width: 230)
 
-            Text("or drop a folder anywhere in this window")
+            Text("or drop a project folder anywhere in this window")
                 .font(.caption)
                 .foregroundStyle(.tertiary)
                 .padding(.top, 14)
@@ -96,10 +96,10 @@ struct WelcomeView: View {
     private var recents: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
-                Text("Recent Folders")
+                Text("Recent Projects")
                     .font(.headline)
                 Spacer()
-                if !store.folders.isEmpty {
+                if !store.projects.isEmpty {
                     Button("Clear") { store.clear() }
                         .buttonStyle(.borderless)
                         .font(.callout)
@@ -109,21 +109,21 @@ struct WelcomeView: View {
             .padding(.horizontal, 10)
             .padding(.top, 6)
 
-            if store.folders.isEmpty {
+            if store.projects.isEmpty {
                 ContentUnavailableView(
-                    "No Recent Folders",
+                    "No Recent Projects",
                     systemImage: "clock.arrow.circlepath",
-                    description: Text("Folders you open will show up here.")
+                    description: Text("Projects you open will show up here.")
                 )
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 ScrollView {
                     LazyVStack(spacing: 2) {
-                        ForEach(store.folders) { folder in
-                            RecentFolderRow(folder: folder) {
-                                opener.open(folder)
+                        ForEach(store.projects) { project in
+                            RecentProjectRow(project: project) {
+                                opener.open(project)
                             } remove: {
-                                withAnimation { store.remove(folder.id) }
+                                withAnimation { store.remove(project.id) }
                             }
                         }
                     }
@@ -151,8 +151,8 @@ struct WelcomeView: View {
     }
 }
 
-private struct RecentFolderRow: View {
-    let folder: RecentFolder
+private struct RecentProjectRow: View {
+    let project: RecentProject
     let open: () -> Void
     let remove: () -> Void
 
@@ -167,10 +167,10 @@ private struct RecentFolderRow: View {
                     .frame(width: 30)
 
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(folder.name)
+                    Text(project.name)
                         .font(.body.weight(.semibold))
                         .lineLimit(1)
-                    Text(folder.displayPath)
+                    Text(project.displayPath)
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
@@ -187,7 +187,7 @@ private struct RecentFolderRow: View {
                     .buttonStyle(.plain)
                     .help("Remove from Recents")
                 } else {
-                    Text(folder.lastOpened.formatted(.relative(presentation: .named)))
+                    Text(project.lastOpened.formatted(.relative(presentation: .named)))
                         .font(.caption)
                         .foregroundStyle(.tertiary)
                 }
@@ -201,8 +201,8 @@ private struct RecentFolderRow: View {
         .onHover { isHovering = $0 }
         .contextMenu {
             Button("Open", action: open)
-            Button("Show in Finder") { Finder.reveal(URL(filePath: folder.path)) }
-            Button("Copy Path") { Finder.copyPath(URL(filePath: folder.path)) }
+            Button("Show in Finder") { Finder.reveal(URL(filePath: project.path)) }
+            Button("Copy Path") { Finder.copyPath(URL(filePath: project.path)) }
             Divider()
             Button("Remove from Recents", role: .destructive, action: remove)
         }

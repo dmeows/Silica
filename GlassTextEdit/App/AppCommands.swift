@@ -8,22 +8,22 @@ struct AppCommands: Commands {
     @Environment(\.openWindow) private var openWindow
     @FocusedValue(\.workspace) private var workspace
 
-    private var recents: RecentFoldersStore { .shared }
+    private var recents: RecentProjectsStore { .shared }
     private var settings: EditorSettings { .shared }
-    private var opener: FolderOpener { FolderOpener(openWindow: openWindow) }
+    private var opener: ProjectOpener { ProjectOpener(openWindow: openWindow) }
 
     var body: some Commands {
         CommandGroup(replacing: .newItem) {
-            Button("Open Folder…") { opener.chooseAndOpen() }
+            Button("Open Project…") { opener.chooseAndOpen() }
                 .keyboardShortcut("o")
 
             Menu("Open Recent") {
-                ForEach(recents.folders) { folder in
-                    Button(folder.name) { opener.open(folder) }
+                ForEach(recents.projects) { project in
+                    Button(project.name) { opener.open(project) }
                 }
                 Divider()
                 Button("Clear Menu") { recents.clear() }
-                    .disabled(recents.folders.isEmpty)
+                    .disabled(recents.projects.isEmpty)
             }
 
             Divider()

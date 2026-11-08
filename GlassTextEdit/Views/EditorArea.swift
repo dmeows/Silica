@@ -188,7 +188,7 @@ private struct EmptyEditorView: View {
             }
 
             Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 8) {
-                shortcut("Open Folder", keys: "⌘O")
+                shortcut("Open Project", keys: "⌘O")
                 shortcut("Save", keys: "⌘S")
                 shortcut("Find", keys: "⌘F")
                 shortcut("Toggle Sidebar", keys: "⌃⌘S")

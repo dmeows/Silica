@@ -22,8 +22,8 @@ struct GlassTextEditApp: App {
         .defaultPosition(.center)
         .restorationBehavior(.disabled)
 
-        WindowGroup("Workspace", id: WindowID.workspace, for: RecentFolder.ID.self) { $folderID in
-            WorkspaceWindow(folderID: folderID)
+        WindowGroup("Workspace", id: WindowID.workspace, for: RecentProject.ID.self) { $projectID in
+            WorkspaceWindow(projectID: projectID)
         }
         .defaultSize(width: 1180, height: 760)
         .windowStyle(.hiddenTitleBar)

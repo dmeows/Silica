@@ -1,9 +1,9 @@
 import AppKit
 import SwiftUI
 
-/// Window root for a workspace: resolves the folder bookmark, then shows the editor.
+/// Window root for a workspace: resolves the project bookmark, then shows the editor.
 struct WorkspaceWindow: View {
-    let folderID: RecentFolder.ID?
+    let projectID: RecentProject.ID?
 
     @Environment(\.openWindow) private var openWindow
     @Environment(\.dismissWindow) private var dismissWindow
@@ -19,11 +19,11 @@ struct WorkspaceWindow: View {
                 WorkspaceView(workspace: workspace)
             } else if let errorMessage {
                 ContentUnavailableView {
-                    Label("Can’t Open Folder", systemImage: "exclamationmark.triangle")
+                    Label("Can’t Open Project", systemImage: "exclamationmark.triangle")
                 } description: {
                     Text(errorMessage)
                 } actions: {
-                    Button("Open Folder…") { FolderOpener(openWindow: openWindow).chooseAndOpen() }
+                    Button("Open Project…") { ProjectOpener(openWindow: openWindow).chooseAndOpen() }
                         .buttonStyle(.glassProminent)
                 }
                 .frame(minWidth: 500, minHeight: 360)
@@ -49,13 +49,13 @@ struct WorkspaceWindow: View {
 
     private func load() {
         guard workspace == nil else { return }
-        guard let folderID else {
-            // e.g. a restored window that never had a folder: just close it.
+        guard let projectID else {
+            // e.g. a restored window that never had a project: just close it.
             dismiss()
             return
         }
         do {
-            let url = try RecentFoldersStore.shared.resolveURL(for: folderID)
+            let url = try RecentProjectsStore.shared.resolveURL(for: projectID)
             workspace = WorkspaceModel(rootURL: url)
         } catch {
             errorMessage = error.localizedDescription
