@@ -92,7 +92,7 @@ private struct EditorTab: View {
             FileIcon(url: url)
                 .font(.caption)
             Text(url.lastPathComponent)
-                .font(.callout.weight(isActive ? .semibold : .regular))
+                .font(.callout)
                 .lineLimit(1)
 
             ZStack {
