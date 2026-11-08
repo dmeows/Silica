@@ -52,7 +52,7 @@ struct FileTreeView: View {
                     .truncationMode(.middle)
             } icon: {
                 Image(systemName: "folder.fill")
-                    .foregroundStyle(.tint)
+                    .foregroundStyle(FileIconPalette.folder)
             }
             .font(.headline)
             .help(workspace.rootURL.path(percentEncoded: false))

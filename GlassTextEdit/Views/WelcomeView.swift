@@ -163,7 +163,7 @@ private struct RecentProjectRow: View {
             HStack(spacing: 12) {
                 Image(systemName: "folder.fill")
                     .font(.title2)
-                    .foregroundStyle(.tint)
+                    .foregroundStyle(FileIconPalette.folder)
                     .frame(width: 30)
 
                 VStack(alignment: .leading, spacing: 2) {
