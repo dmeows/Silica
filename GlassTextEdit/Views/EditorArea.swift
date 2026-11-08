@@ -24,7 +24,9 @@ struct EditorArea: View {
     }
 
     private var editorCard: some View {
-        let shape = RoundedRectangle(cornerRadius: WorkspaceLayout.cardCornerRadius, style: .continuous)
+        // Corners next to the window's corners follow its radius minus the inset;
+        // the others (under the tab bar) fall back to the minimum.
+        let shape = ConcentricRectangle(corners: .concentric(minimum: .fixed(WorkspaceLayout.cardCornerRadius)))
         return Group {
             if let buffer = workspace.activeBuffer {
                 BufferView(buffer: buffer)
