@@ -18,8 +18,10 @@ struct FileTreeView: View {
 
             List(selection: $workspace.selection) {
                 if let children = workspace.root.children, !children.isEmpty {
-                    ForEach(children) { node in
-                        FileNodeRow(node: node, workspace: workspace)
+                    // A flat list of the visible nodes, each indented by its depth, so the
+                    // rows can draw their own compact disclosure chevrons.
+                    ForEach(visibleRows(in: children), id: \.node.id) { row in
+                        FileNodeRow(node: row.node, depth: row.depth, workspace: workspace)
                     }
                 } else {
                     Text("This project is empty")
@@ -30,6 +32,9 @@ struct FileTreeView: View {
             .listStyle(.sidebar)
             .scrollContentBackground(.hidden)
             .scrollIndicators(.never)
+            // ← / → collapse and expand folders, as the system outline did.
+            .onKeyPress(.rightArrow) { workspace.setSelectedFolderExpanded(true) ? .handled : .ignored }
+            .onKeyPress(.leftArrow) { workspace.setSelectedFolderExpanded(false) ? .handled : .ignored }
             // Compact, editor-style rows.
             .environment(\.sidebarRowSize, .small)
             .environment(\.defaultMinListRowHeight, 22)
@@ -44,18 +49,27 @@ struct FileTreeView: View {
         }
     }
 
+    private func visibleRows(in nodes: [FileNode]) -> [(node: FileNode, depth: Int)] {
+        var rows: [(node: FileNode, depth: Int)] = []
+        func add(_ nodes: [FileNode], depth: Int) {
+            for node in nodes {
+                rows.append((node, depth))
+                if node.isDirectory, node.isExpanded, let children = node.children {
+                    add(children, depth: depth + 1)
+                }
+            }
+        }
+        add(nodes, depth: 0)
+        return rows
+    }
+
     private var header: some View {
         HStack(spacing: 8) {
-            Label {
-                Text(workspace.name)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-            } icon: {
-                Image(systemName: "folder.fill")
-                    .foregroundStyle(FileIconPalette.folder)
-            }
-            .font(.headline)
-            .help(workspace.rootURL.path(percentEncoded: false))
+            Text(workspace.name)
+                .lineLimit(1)
+                .truncationMode(.middle)
+                .font(.headline)
+                .help(workspace.rootURL.path(percentEncoded: false))
 
             Spacer(minLength: 0)
 
@@ -79,28 +93,29 @@ struct FileTreeView: View {
 }
 
 private struct FileNodeRow: View {
-    @Bindable var node: FileNode
+    let node: FileNode
+    let depth: Int
     let workspace: WorkspaceModel
 
+    private static let indentWidth: CGFloat = 14
+
     var body: some View {
-        Group {
-            if node.isDirectory {
-                DisclosureGroup(isExpanded: $node.isExpanded) {
-                    if let children = node.children {
-                        ForEach(children) { child in
-                            FileNodeRow(node: child, workspace: workspace)
-                        }
-                    }
-                } label: {
-                    label
-                }
-                .onChange(of: node.isExpanded, initial: true) {
-                    if node.isExpanded { node.loadChildrenIfNeeded() }
-                }
-            } else {
-                label
+        HStack(spacing: 4) {
+            disclosureChevron
+            FileIcon(url: node.url, isDirectory: node.isDirectory, isExpanded: node.isExpanded)
+                .padding(.trailing, 2)
+            Text(node.name)
+                .lineLimit(1)
+                .truncationMode(.middle)
+            Spacer(minLength: 0)
+            if workspace.buffers[node.url]?.isDirty == true {
+                Circle()
+                    .fill(.primary.opacity(0.6))
+                    .frame(width: 7, height: 7)
+                    .help("Unsaved changes")
             }
         }
+        .padding(.leading, CGFloat(depth) * Self.indentWidth)
         .tag(node.url)
         .contextMenu {
             if !node.isDirectory {
@@ -116,19 +131,25 @@ private struct FileNodeRow: View {
         }
     }
 
-    private var label: some View {
-        HStack(spacing: 6) {
-            FileIcon(url: node.url, isDirectory: node.isDirectory, isExpanded: node.isExpanded)
-            Text(node.name)
-                .lineLimit(1)
-                .truncationMode(.middle)
-            Spacer(minLength: 0)
-            if workspace.buffers[node.url]?.isDirty == true {
-                Circle()
-                    .fill(.primary.opacity(0.6))
-                    .frame(width: 7, height: 7)
-                    .help("Unsaved changes")
+    /// A smaller chevron than the system outline's; files get the same width of space.
+    @ViewBuilder
+    private var disclosureChevron: some View {
+        if node.isDirectory {
+            // A button, so the click toggles the folder without also selecting the row
+            // (selecting a folder row toggles it too).
+            Button {
+                workspace.toggleExpansion(of: node)
+            } label: {
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 8, weight: .bold))
+                    .foregroundStyle(.secondary)
+                    .rotationEffect(.degrees(node.isExpanded ? 90 : 0))
+                    .frame(width: 12, height: 16)
+                    .contentShape(.rect)
             }
+            .buttonStyle(.plain)
+        } else {
+            Color.clear.frame(width: 12, height: 16)
         }
     }
 }

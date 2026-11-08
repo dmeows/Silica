@@ -10,7 +10,9 @@ final class FileNode: Identifiable {
 
     /// `nil` until the folder has been expanded for the first time.
     private(set) var children: [FileNode]?
-    var isExpanded = false
+    var isExpanded = false {
+        didSet { if isExpanded { loadChildrenIfNeeded() } }
+    }
 
     var id: URL { url }
 

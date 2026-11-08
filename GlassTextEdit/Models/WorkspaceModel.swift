@@ -50,10 +50,22 @@ final class WorkspaceModel {
     func handleSelectionChange() {
         guard let url = selection else { return }
         if url.hasDirectoryPath {
-            node(for: url)?.isExpanded.toggle()
+            if let node = node(for: url) { toggleExpansion(of: node) }
         } else {
             open(url)
         }
+    }
+
+    func toggleExpansion(of node: FileNode) {
+        withAnimation(.snappy(duration: 0.2)) { node.isExpanded.toggle() }
+    }
+
+    /// Expands or collapses the selected folder; returns `false` if nothing changed.
+    func setSelectedFolderExpanded(_ expanded: Bool) -> Bool {
+        guard let url = selection, url.hasDirectoryPath, let node = node(for: url),
+              node.isExpanded != expanded else { return false }
+        toggleExpansion(of: node)
+        return true
     }
 
     func toggleSidebar() {
