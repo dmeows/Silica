@@ -13,7 +13,7 @@ final class LineNumberRulerView: NSRulerView {
     private var lineStartsAreStale = true
 
     private var font = NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .regular)
-    private let leadingPadding: CGFloat = 14
+    private let leadingPadding: CGFloat = 6
     private let trailingPadding: CGFloat = 6
 
     init(textView: NSTextView, scrollView: NSScrollView, editorFontSize: CGFloat) {
