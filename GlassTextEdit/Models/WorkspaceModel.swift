@@ -11,6 +11,8 @@ final class WorkspaceModel {
 
     var selection: URL?
     var isSidebarVisible = true
+    private(set) var isQuickOpenVisible = false
+    let quickOpen: QuickOpenModel
     private(set) var openTabs: [URL] = []
     private(set) var activeTab: URL?
     private(set) var buffers: [URL: EditorBuffer] = [:]
@@ -31,6 +33,7 @@ final class WorkspaceModel {
         self.rootURL = rootURL
         self.isAccessingScope = rootURL.startAccessingSecurityScopedResource()
         self.root = FileNode(url: rootURL, isDirectory: true)
+        self.quickOpen = QuickOpenModel(rootURL: rootURL)
         root.isExpanded = true
         root.loadChildrenIfNeeded()
     }
@@ -55,6 +58,31 @@ final class WorkspaceModel {
 
     func toggleSidebar() {
         withAnimation(.snappy) { isSidebarVisible.toggle() }
+    }
+
+    // MARK: Quick Open
+
+    func toggleQuickOpen() {
+        if isQuickOpenVisible {
+            hideQuickOpen()
+        } else {
+            quickOpen.prepareForPresentation(activeFile: activeTab)
+            withAnimation(.snappy(duration: 0.18)) { isQuickOpenVisible = true }
+        }
+    }
+
+    func hideQuickOpen() {
+        guard isQuickOpenVisible else { return }
+        withAnimation(.snappy(duration: 0.18)) { isQuickOpenVisible = false }
+        // Give typing focus back to the editor.
+        if let textView = activeBuffer?.textController?.textView {
+            textView.window?.makeFirstResponder(textView)
+        }
+    }
+
+    func openFromQuickOpen(_ url: URL) {
+        hideQuickOpen()
+        open(url)
     }
 
     func refresh() {
@@ -102,6 +130,7 @@ final class WorkspaceModel {
 
     func activate(_ url: URL) {
         activeTab = url
+        quickOpen.noteOpened(url)
         if selection != url {
             selection = url
         }

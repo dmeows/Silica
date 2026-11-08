@@ -138,7 +138,7 @@ enum RealHome {
     }()
 }
 
-extension String {
+nonisolated extension String {
     var trimmingTrailingSlash: String {
         count > 1 && hasSuffix("/") ? String(dropLast()) : self
     }

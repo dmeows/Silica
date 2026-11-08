@@ -39,6 +39,9 @@ struct WorkspaceWindow: View {
             load()
         }
         .onDisappear {
+            if let workspace, KeyWorkspace.shared.current === workspace {
+                KeyWorkspace.shared.current = nil
+            }
             workspace?.close()
             Self.openCount -= 1
             if Self.openCount == 0 {
@@ -92,12 +95,17 @@ struct WorkspaceView: View {
             EditorArea(workspace: workspace)
         }
         .ignoresSafeArea(.container, edges: .top)
+        .overlay {
+            if workspace.isQuickOpenVisible {
+                QuickOpenOverlay(workspace: workspace)
+            }
+        }
         .frame(minWidth: 640, minHeight: 400)
         .containerBackground(for: .window) {
             VisualEffectView(.hudWindow)
         }
         .navigationTitle(workspace.name)
-        .focusedSceneValue(\.workspace, workspace)
+        .background(KeyWindowTracker(workspace: workspace))
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             workspace.refresh()
         }

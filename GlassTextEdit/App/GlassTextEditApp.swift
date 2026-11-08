@@ -9,6 +9,7 @@ enum WindowID {
 struct GlassTextEditApp: App {
     init() {
         EditorSettings.shared.installKeyboardShortcuts()
+        MenuShortcutRefresh.install()
     }
 
     var body: some Scene {

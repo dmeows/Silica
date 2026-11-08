@@ -1,12 +1,11 @@
 import SwiftUI
 
-extension FocusedValues {
-    @Entry var workspace: WorkspaceModel?
-}
-
 struct AppCommands: Commands {
     @Environment(\.openWindow) private var openWindow
-    @FocusedValue(\.workspace) private var workspace
+    /// The project in the key window. Tracked from AppKit key-window changes, since
+    /// `focusedSceneValue` came back nil while the editor's NSTextView had focus.
+    @ObservedObject private var keyWorkspace = KeyWorkspace.shared
+    private var workspace: WorkspaceModel? { keyWorkspace.current }
 
     private var recents: RecentProjectsStore { .shared }
     private var settings: EditorSettings { .shared }
@@ -28,9 +27,18 @@ struct AppCommands: Commands {
 
             Divider()
 
+            Button("Quick Open…") { workspace?.toggleQuickOpen() }
+                .keyboardShortcut("p")
+                .disabled(workspace == nil)
+
+            Divider()
+
             Button("Welcome Window") { openWindow(id: WindowID.welcome) }
                 .keyboardShortcut("1", modifiers: [.command, .shift])
         }
+
+        // No printing; ⌘P is Quick Open, as in other code editors.
+        CommandGroup(replacing: .printItem) {}
 
         CommandGroup(replacing: .saveItem) {
             Button("Save") { workspace?.saveActive() }
