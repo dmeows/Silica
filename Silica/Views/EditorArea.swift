@@ -145,6 +145,8 @@ private struct BufferView: View {
         switch buffer.content {
         case .text(let controller):
             TextViewHost(controller: controller)
+        case .image(let file):
+            ImagePreview(file: file)
         case .binary:
             ContentUnavailableView(
                 "Binary File",
@@ -163,6 +165,54 @@ private struct BufferView: View {
                 systemImage: "exclamationmark.triangle",
                 description: Text(message)
             )
+        }
+    }
+}
+
+// MARK: - Image
+
+/// Shows an image file fitted to the editor card, never enlarged past one image
+/// pixel per point (VS Code's and Preview's 100%), over a checkerboard so
+/// transparent areas are visible.
+private struct ImagePreview: View {
+    let file: EditorBuffer.ImageFile
+
+    var body: some View {
+        VStack(spacing: 12) {
+            Image(nsImage: file.image)
+                .resizable()
+                .interpolation(.high)
+                .scaledToFit()
+                .background(Checkerboard())
+                .overlay(Rectangle().strokeBorder(.separator, lineWidth: 1))
+                .frame(maxWidth: file.pixelSize.width, maxHeight: file.pixelSize.height)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+            Text(details)
+                .font(.callout)
+                .monospacedDigit()
+                .foregroundStyle(.secondary)
+        }
+        .padding(24)
+    }
+
+    private var details: String {
+        let size = "\(Int(file.pixelSize.width)) × \(Int(file.pixelSize.height)) px"
+        return [size, file.format, file.byteCount.formatted(.byteCount(style: .file))].joined(separator: "  ·  ")
+    }
+}
+
+/// Light and dark squares behind transparent pixels, as image editors draw them.
+private struct Checkerboard: View {
+    var body: some View {
+        Canvas { context, size in
+            let square: CGFloat = 8
+            for row in 0..<Int((size.height / square).rounded(.up)) {
+                for column in 0..<Int((size.width / square).rounded(.up)) where (row + column).isMultiple(of: 2) {
+                    let rect = CGRect(x: CGFloat(column) * square, y: CGFloat(row) * square, width: square, height: square)
+                    context.fill(Path(rect), with: .color(.primary.opacity(0.06)))
+                }
+            }
         }
     }
 }
