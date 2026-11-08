@@ -113,11 +113,15 @@ private struct FileNodeRow: View {
     var body: some View {
         HStack(spacing: 4) {
             disclosureChevron
-            FileIcon(url: node.url, isDirectory: node.isDirectory, isExpanded: node.isExpanded)
-                .padding(.trailing, 2)
-            Text(node.name)
-                .lineLimit(1)
-                .truncationMode(.middle)
+            Group {
+                FileIcon(url: node.url, isDirectory: node.isDirectory, isExpanded: node.isExpanded)
+                    .padding(.trailing, 2)
+                Text(node.name)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
+            // Dotfiles and gitignored items fade back but stay clickable.
+            .opacity(node.isDimmed ? 0.5 : 1)
             Spacer(minLength: 0)
             if workspace.buffers[node.url]?.isDirty == true {
                 Circle()

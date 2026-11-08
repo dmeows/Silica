@@ -36,7 +36,7 @@ final class WorkspaceModel {
     init(rootURL: URL) {
         self.rootURL = rootURL
         self.isAccessingScope = rootURL.startAccessingSecurityScopedResource()
-        self.root = FileNode(url: rootURL, isDirectory: true)
+        self.root = FileNode(root: rootURL)
         self.quickOpen = QuickOpenModel(rootURL: rootURL)
         root.isExpanded = true
         root.loadChildrenIfNeeded()
