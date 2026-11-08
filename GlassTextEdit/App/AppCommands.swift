@@ -9,6 +9,7 @@ struct AppCommands: Commands {
     @FocusedValue(\.workspace) private var workspace
 
     private var recents: RecentFoldersStore { .shared }
+    private var settings: EditorSettings { .shared }
     private var opener: FolderOpener { FolderOpener(openWindow: openWindow) }
 
     var body: some Commands {
@@ -57,6 +58,23 @@ struct AppCommands: Commands {
             Button("Refresh Explorer") { workspace?.refresh() }
                 .keyboardShortcut("r", modifiers: [.command, .shift])
                 .disabled(workspace == nil)
+        }
+
+        CommandGroup(after: .sidebar) {
+            Divider()
+
+            // ⌘= also zooms in; see EditorSettings.installKeyboardShortcuts().
+            Button("Increase Font Size") { settings.increaseFontSize() }
+                .keyboardShortcut("+")
+                .disabled(!settings.canIncreaseFontSize)
+
+            Button("Decrease Font Size") { settings.decreaseFontSize() }
+                .keyboardShortcut("-")
+                .disabled(!settings.canDecreaseFontSize)
+
+            Button("Reset Font Size") { settings.resetFontSize() }
+                .keyboardShortcut("0")
+                .disabled(settings.isDefaultFontSize)
         }
     }
 }

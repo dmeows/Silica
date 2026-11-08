@@ -7,6 +7,10 @@ enum WindowID {
 
 @main
 struct GlassTextEditApp: App {
+    init() {
+        EditorSettings.shared.installKeyboardShortcuts()
+    }
+
     var body: some Scene {
         Window("Welcome to GlassTextEdit", id: WindowID.welcome) {
             WelcomeView()

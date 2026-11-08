@@ -12,13 +12,14 @@ final class LineNumberRulerView: NSRulerView {
     private var lineStarts: [Int] = [0]
     private var lineStartsAreStale = true
 
-    private let font = NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .regular)
+    private var font = NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .regular)
     private let leadingPadding: CGFloat = 14
     private let trailingPadding: CGFloat = 6
 
-    init(textView: NSTextView, scrollView: NSScrollView) {
+    init(textView: NSTextView, scrollView: NSScrollView, editorFontSize: CGFloat) {
         self.textView = textView
         super.init(scrollView: scrollView, orientation: .verticalRuler)
+        font = Self.font(forEditorSize: editorFontSize)
         clientView = textView
         reservedThicknessForMarkers = 0
         reservedThicknessForAccessoryView = 0
@@ -46,6 +47,18 @@ final class LineNumberRulerView: NSRulerView {
     override var isOpaque: Bool { false }
     /// Vibrant label colors blend with the glass behind the card and wash out in dark mode.
     override var allowsVibrancy: Bool { false }
+
+    /// Numbers stay two points smaller than the editor text.
+    private static func font(forEditorSize size: CGFloat) -> NSFont {
+        .monospacedDigitSystemFont(ofSize: max(size - 2, 8), weight: .regular)
+    }
+
+    /// Call when the editor's font size changes.
+    func setEditorFontSize(_ size: CGFloat) {
+        font = Self.font(forEditorSize: size)
+        updateThickness()
+        needsDisplay = true
+    }
 
     /// Call after the text changes.
     func textDidChange() {

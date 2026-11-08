@@ -32,7 +32,8 @@ final class TextController: NSObject, NSTextViewDelegate {
         textView.isAutomaticLinkDetectionEnabled = false
         textView.isAutomaticDataDetectionEnabled = false
         textView.smartInsertDeleteEnabled = false
-        textView.font = .monospacedSystemFont(ofSize: 13, weight: .regular)
+        let fontSize = EditorSettings.shared.fontSize
+        textView.font = Self.font(ofSize: fontSize)
         textView.textColor = .labelColor
         textView.textContainerInset = NSSize(width: 8, height: 12)
 
@@ -46,7 +47,7 @@ final class TextController: NSObject, NSTextViewDelegate {
         textView.setSelectedRange(NSRange(location: 0, length: 0))
         textView.delegate = self
 
-        let ruler = LineNumberRulerView(textView: textView, scrollView: scrollView)
+        let ruler = LineNumberRulerView(textView: textView, scrollView: scrollView, editorFontSize: fontSize)
         scrollView.verticalRulerView = ruler
         scrollView.hasVerticalRuler = true
         scrollView.rulersVisible = true
@@ -56,6 +57,24 @@ final class TextController: NSObject, NSTextViewDelegate {
             highlighter = SyntaxHighlighter(textView: textView, language: language)
             highlighter?.highlightNow()
         }
+
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(fontSizeDidChange),
+            name: .editorFontSizeDidChange, object: nil
+        )
+    }
+
+    private static func font(ofSize size: CGFloat) -> NSFont {
+        .monospacedSystemFont(ofSize: size, weight: .regular)
+    }
+
+    /// Restyles the text in place; this doesn't touch undo or mark the file dirty.
+    @objc private func fontSizeDidChange() {
+        let size = EditorSettings.shared.fontSize
+        let font = Self.font(ofSize: size)
+        textView.font = font
+        textView.typingAttributes[.font] = font
+        lineNumbers?.setEditorFontSize(size)
     }
 
     func textDidChange(_ notification: Notification) {
