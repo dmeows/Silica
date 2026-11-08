@@ -8,6 +8,7 @@ final class TextController: NSObject, NSTextViewDelegate {
     let textView: NSTextView
     weak var buffer: EditorBuffer?
     private var highlighter: SyntaxHighlighter?
+    private var lineNumbers: LineNumberRulerView?
 
     init(text: String, language: SyntaxLanguage?) {
         scrollView = NSTextView.scrollableTextView()
@@ -33,7 +34,7 @@ final class TextController: NSObject, NSTextViewDelegate {
         textView.smartInsertDeleteEnabled = false
         textView.font = .monospacedSystemFont(ofSize: 13, weight: .regular)
         textView.textColor = .labelColor
-        textView.textContainerInset = NSSize(width: 14, height: 12)
+        textView.textContainerInset = NSSize(width: 8, height: 12)
 
         let paragraph = NSMutableParagraphStyle()
         paragraph.lineHeightMultiple = 1.15
@@ -45,6 +46,12 @@ final class TextController: NSObject, NSTextViewDelegate {
         textView.setSelectedRange(NSRange(location: 0, length: 0))
         textView.delegate = self
 
+        let ruler = LineNumberRulerView(textView: textView, scrollView: scrollView)
+        scrollView.verticalRulerView = ruler
+        scrollView.hasVerticalRuler = true
+        scrollView.rulersVisible = true
+        lineNumbers = ruler
+
         if let language {
             highlighter = SyntaxHighlighter(textView: textView, language: language)
             highlighter?.highlightNow()
@@ -53,9 +60,14 @@ final class TextController: NSObject, NSTextViewDelegate {
 
     func textDidChange(_ notification: Notification) {
         highlighter?.textDidChange()
+        lineNumbers?.textDidChange()
         if buffer?.isDirty == false {
             buffer?.isDirty = true
         }
+    }
+
+    func textViewDidChangeSelection(_ notification: Notification) {
+        lineNumbers?.setNeedsRedraw()
     }
 }
 

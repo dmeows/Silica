@@ -4,6 +4,11 @@ import AppKit
 nonisolated enum SyntaxTheme {
     static let plain = NSColor.labelColor
 
+    /// Gutter numbers: solid colors rather than translucent label colors, which
+    /// lose contrast on the glass card.
+    static let lineNumber = dynamic(light: 0x9A9AA0, dark: 0x9C9CA2)
+    static let currentLineNumber = dynamic(light: 0x3C3C43, dark: 0xF2F2F7)
+
     static func color(for kind: TokenKind) -> NSColor {
         switch kind {
         case .keyword: keyword

@@ -68,7 +68,7 @@ enum WorkspaceLayout {
     static let titleBarHeight: CGFloat = 32
     /// Room for the traffic lights when the sidebar is hidden.
     static let trafficLightsWidth: CGFloat = 78
-    static let cardCornerRadius: CGFloat = 14
+    static let cardCornerRadius: CGFloat = 10
     static let cardInset: CGFloat = 10
     static let sidebarWidthRange: ClosedRange<Double> = 180...480
 }
