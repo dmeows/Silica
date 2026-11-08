@@ -50,23 +50,21 @@ private struct EditorTabBar: View {
     var body: some View {
         ScrollViewReader { proxy in
             ScrollView(.horizontal) {
-                GlassEffectContainer(spacing: 8) {
-                    HStack(spacing: 6) {
-                        ForEach(workspace.openTabs, id: \.self) { url in
-                            EditorTab(
-                                url: url,
-                                isActive: url == workspace.activeTab,
-                                isDirty: workspace.buffers[url]?.isDirty == true,
-                                select: { workspace.activate(url) },
-                                close: { withAnimation(.snappy) { workspace.closeTab(url) } },
-                                closeOthers: { withAnimation(.snappy) { workspace.closeOtherTabs(than: url) } }
-                            )
-                            .id(url)
-                        }
+                HStack(spacing: 6) {
+                    ForEach(workspace.openTabs, id: \.self) { url in
+                        EditorTab(
+                            url: url,
+                            isActive: url == workspace.activeTab,
+                            isDirty: workspace.buffers[url]?.isDirty == true,
+                            select: { workspace.activate(url) },
+                            close: { withAnimation(.snappy) { workspace.closeTab(url) } },
+                            closeOthers: { withAnimation(.snappy) { workspace.closeOtherTabs(than: url) } }
+                        )
+                        .id(url)
                     }
-                    .padding(.horizontal, 2)
-                    .padding(.vertical, 4)
                 }
+                .padding(.horizontal, 2)
+                .padding(.vertical, 4)
             }
             .scrollIndicators(.never)
             .fixedSize(horizontal: false, vertical: true)
@@ -121,10 +119,8 @@ private struct EditorTab: View {
         .padding(.trailing, 6)
         .padding(.vertical, 4)
         .foregroundStyle(isActive ? .primary : .secondary)
-        .glassEffect(
-            isActive ? .regular.tint(.accentColor.opacity(0.25)).interactive() : .regular.interactive(),
-            in: .rect(cornerRadius: 8, style: .continuous)
-        )
+        // Only the active tab sits on glass; `.identity` renders no effect.
+        .glassEffect(isActive ? .regular : .identity, in: .rect(cornerRadius: 8, style: .continuous))
         .contentShape(.rect(cornerRadius: 8, style: .continuous))
         .onTapGesture(perform: select)
         .onHover { isHovering = $0 }
