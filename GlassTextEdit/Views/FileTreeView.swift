@@ -5,18 +5,16 @@ struct FileTreeView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            // Title bar row: traffic lights sit on the left, toggle on the right.
-            HStack {
-                Spacer()
+            // Title bar row: traffic lights, then the folder header, then the toggle.
+            HStack(spacing: 8) {
+                header
                 SidebarToggleButton(workspace: workspace)
             }
             .frame(height: WorkspaceLayout.titleBarHeight)
+            .padding(.leading, WorkspaceLayout.trafficLightsWidth)
             .padding(.trailing, 8)
-
-            header
-                .padding(.horizontal, 18)
-                .padding(.top, 12)
-                .padding(.bottom, 6)
+            // Above the list, which reaches up underneath this row (see below).
+            .zIndex(1)
 
             List(selection: $workspace.selection) {
                 if let children = workspace.root.children, !children.isEmpty {
@@ -31,9 +29,15 @@ struct FileTreeView: View {
             }
             .listStyle(.sidebar)
             .scrollContentBackground(.hidden)
+            .scrollIndicators(.never)
             // Compact, editor-style rows.
             .environment(\.sidebarRowSize, .small)
             .environment(\.defaultMinListRowHeight, 22)
+            // The sidebar list style has a fixed top inset that content margins don't
+            // change. Pull the list up by most of it and clip, so rows start closer to
+            // the title bar and scrolled rows still disappear at its bottom edge.
+            .padding(.top, -WorkspaceLayout.sidebarListTopTrim)
+            .clipped()
         }
         .onChange(of: workspace.selection) {
             workspace.handleSelectionChange()

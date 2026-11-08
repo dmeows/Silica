@@ -70,7 +70,9 @@ enum WorkspaceLayout {
     static let trafficLightsWidth: CGFloat = 78
     static let cardCornerRadius: CGFloat = 10
     static let cardInset: CGFloat = 10
-    static let sidebarWidthRange: ClosedRange<Double> = 180...480
+    /// How much of the sidebar list's built-in top inset to hide.
+    static let sidebarListTopTrim: CGFloat = 8
+    static let sidebarWidthRange: ClosedRange<Double> = 220...480
 }
 
 struct WorkspaceView: View {
@@ -82,7 +84,7 @@ struct WorkspaceView: View {
         HStack(spacing: 0) {
             if workspace.isSidebarVisible {
                 FileTreeView(workspace: workspace)
-                    .frame(width: sidebarWidth)
+                    .frame(width: min(max(sidebarWidth, WorkspaceLayout.sidebarWidthRange.lowerBound), WorkspaceLayout.sidebarWidthRange.upperBound))
                     .overlay(alignment: .trailing) { resizeHandle }
                     .transition(.move(edge: .leading).combined(with: .opacity))
             }
