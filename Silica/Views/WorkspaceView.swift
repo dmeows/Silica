@@ -140,10 +140,10 @@ struct SidebarToggleButton: View {
             workspace.toggleSidebar()
         } label: {
             Image(systemName: "sidebar.left")
-                .frame(width: 18, height: 18)
         }
-        .buttonStyle(.glass)
-        .buttonBorderShape(.circle)
+        // Same plain icon style as the Refresh and Collapse buttons in the sidebar header.
+        .buttonStyle(.borderless)
+        .foregroundStyle(.secondary)
         .help(workspace.isSidebarVisible ? "Hide Sidebar (⌃⌘S)" : "Show Sidebar (⌃⌘S)")
     }
 }
