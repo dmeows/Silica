@@ -11,20 +11,20 @@
     ],
   },
   "files": [
-    { "kind": "folder", "path": "GlassTextEdit", "target-membership": [ "GlassTextEdit" ] },
+    { "kind": "folder", "path": "Silica", "target-membership": [ "Silica" ] },
     {
       "kind": "group",
       "name": "Products",
       "children": [
-        { "path": "<PRODUCTS>/GlassTextEdit.app", "id": "000000000000000000000120", "type": "wrapper.application", "index": false },
+        { "path": "<PRODUCTS>/Silica.app", "id": "000000000000000000000120", "type": "wrapper.application", "index": false },
       ],
     },
   ],
   "targets": [
     {
-      "name": "GlassTextEdit",
+      "name": "Silica",
       "id": "000000000000000100000000",
-      "product": "Products/GlassTextEdit.app",
+      "product": "Products/Silica.app",
       "product-type": "application",
       "build-phases": [
         "compile-sources",

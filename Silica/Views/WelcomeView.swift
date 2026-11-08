@@ -18,7 +18,7 @@ struct WelcomeView: View {
         }
         // Frosted, behind-window blur for the whole welcome window.
         .containerBackground(for: .window) {
-            VisualEffectView(.hudWindow)
+            VisualEffectView()
         }
         .overlay {
             if isDropTargeted {
@@ -44,7 +44,7 @@ struct WelcomeView: View {
                 .glassEffect(.regular.tint(.accentColor.opacity(0.85)), in: .rect(cornerRadius: 28))
                 .shadow(color: .accentColor.opacity(0.35), radius: 20, y: 10)
 
-            Text("GlassTextEdit")
+            Text("Silica")
                 .font(.system(size: 30, weight: .bold))
                 .padding(.top, 22)
 

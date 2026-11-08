@@ -6,14 +6,14 @@ enum WindowID {
 }
 
 @main
-struct GlassTextEditApp: App {
+struct SilicaApp: App {
     init() {
         EditorSettings.shared.installKeyboardShortcuts()
         MenuShortcutRefresh.install()
     }
 
     var body: some Scene {
-        Window("Welcome to GlassTextEdit", id: WindowID.welcome) {
+        Window("Welcome to Silica", id: WindowID.welcome) {
             WelcomeView()
                 .frame(width: 780, height: 480)
         }

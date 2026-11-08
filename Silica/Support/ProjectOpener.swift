@@ -14,7 +14,7 @@ struct ProjectOpener {
         panel.allowsMultipleSelection = false
         panel.canCreateDirectories = true
         panel.prompt = "Open"
-        panel.message = "Choose a project folder to open in GlassTextEdit"
+        panel.message = "Choose a project folder to open in Silica"
         guard panel.runModal() == .OK, let url = panel.url else { return }
         open(url: url)
     }
