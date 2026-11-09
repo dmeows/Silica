@@ -62,6 +62,7 @@ private struct EditorTabBar: View {
                             url: url,
                             isActive: url == workspace.activeTab,
                             isDirty: workspace.buffers[url]?.isDirty == true,
+                            isMissing: workspace.buffers[url]?.isMissingOnDisk == true,
                             select: { workspace.activate(url) },
                             close: { withAnimation(.snappy) { workspace.closeTab(url) } },
                             closeOthers: { withAnimation(.snappy) { workspace.closeOtherTabs(than: url) } }
@@ -87,6 +88,8 @@ private struct EditorTab: View {
     let url: URL
     let isActive: Bool
     let isDirty: Bool
+    /// Deleted or moved on disk since it was opened.
+    let isMissing: Bool
     let select: () -> Void
     let close: () -> Void
     let closeOthers: () -> Void
@@ -100,6 +103,8 @@ private struct EditorTab: View {
             Text(url.lastPathComponent)
                 .font(.callout)
                 .lineLimit(1)
+                .strikethrough(isMissing)
+                .help(isMissing ? "Deleted from disk. Save to write it again." : "")
 
             ZStack {
                 if isDirty && !isHovering {

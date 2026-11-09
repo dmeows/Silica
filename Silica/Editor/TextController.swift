@@ -109,8 +109,39 @@ final class TextController: NSObject, NSTextViewDelegate {
     func textDidChange(_ notification: Notification) {
         highlighter?.textDidChange()
         lineNumbers?.textDidChange()
-        if buffer?.isDirty == false {
+        if !isReplacingText, buffer?.isDirty == false {
             buffer?.isDirty = true
+        }
+    }
+
+    private var isReplacingText = false
+
+    /// Swaps in new text (the file as changed on disk) as one undoable edit that
+    /// leaves the buffer clean. Only the differing middle is replaced, so the
+    /// selection and scroll position stay put when the change is elsewhere.
+    func replaceText(with newText: String) {
+        let old = textView.string as NSString
+        let new = newText as NSString
+        let shared = min(old.length, new.length)
+        var prefix = 0
+        while prefix < shared, old.character(at: prefix) == new.character(at: prefix) { prefix += 1 }
+        // Don't cut a surrogate pair in half.
+        if prefix > 0, prefix < shared, UTF16.isLeadSurrogate(old.character(at: prefix - 1)) { prefix -= 1 }
+        var suffix = 0
+        while suffix < shared - prefix,
+              old.character(at: old.length - 1 - suffix) == new.character(at: new.length - 1 - suffix) { suffix += 1 }
+        if suffix > 0, suffix < shared - prefix, UTF16.isTrailSurrogate(old.character(at: old.length - suffix)) { suffix -= 1 }
+
+        let range = NSRange(location: prefix, length: old.length - prefix - suffix)
+        let replacement = new.substring(with: NSRange(location: prefix, length: new.length - prefix - suffix))
+        guard range.length > 0 || !replacement.isEmpty else { return }
+
+        isReplacingText = true
+        defer { isReplacingText = false }
+        if textView.shouldChangeText(in: range, replacementString: replacement) {
+            textView.replaceCharacters(in: range, with: replacement)
+            textView.didChangeText()
+            textView.undoManager?.setActionName("Revert")
         }
     }
 

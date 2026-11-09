@@ -7,6 +7,8 @@ enum WindowID {
 
 @main
 struct SilicaApp: App {
+    @NSApplicationDelegateAdaptor private var appDelegate: AppDelegate
+
     init() {
         EditorSettings.shared.installKeyboardShortcuts()
         MenuShortcutRefresh.install()

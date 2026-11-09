@@ -1,4 +1,5 @@
 import AppKit
+import CryptoKit
 import Foundation
 import ImageIO
 import Observation
@@ -18,9 +19,15 @@ final class EditorBuffer: Identifiable {
 
     let url: URL
     let content: Content
-    let encoding: String.Encoding
+    private(set) var encoding: String.Encoding
 
     var isDirty = false
+    /// The file was deleted or moved away after it was opened. The tab keeps its
+    /// text; saving writes the file again.
+    private(set) var isMissingOnDisk = false
+    /// The file on disk as Silica last read or wrote it, to tell when another app
+    /// changes it.
+    @ObservationIgnored private var diskSnapshot: DiskSnapshot?
 
     /// Markdown files can switch between their source and a rendered preview.
     let isMarkdown: Bool
@@ -53,10 +60,14 @@ final class EditorBuffer: Identifiable {
         self.url = url
         self.isMarkdown = SyntaxLanguage(url: url) == .markdown
 
-        let size = (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize).map(Int64.init) ?? 0
+        // From the file system, not URL's resource cache, which can be stale when a
+        // changed file is opened again.
+        let attributes = Self.attributes(of: url)
+        let size = Int64(attributes?.size ?? 0)
 
         if Self.isImage(url) {
             encoding = .utf8
+            diskSnapshot = attributes.map { DiskSnapshot(attributes: $0, digest: nil) }
             if size > Self.maxImageSize {
                 content = .tooLarge(size)
             } else if let image = Self.loadImage(url, byteCount: size) {
@@ -70,6 +81,7 @@ final class EditorBuffer: Identifiable {
         if size > Self.maxFileSize {
             content = .tooLarge(size)
             encoding = .utf8
+            diskSnapshot = attributes.map { DiskSnapshot(attributes: $0, digest: nil) }
             return
         }
 
@@ -81,6 +93,7 @@ final class EditorBuffer: Identifiable {
             encoding = .utf8
             return
         }
+        diskSnapshot = attributes.map { DiskSnapshot(attributes: $0, digest: Self.digest(of: data)) }
 
         guard !Self.looksBinary(data), let (text, encoding) = Self.decode(data) else {
             content = .binary
@@ -137,8 +150,116 @@ final class EditorBuffer: Identifiable {
 
     func save() throws {
         guard let controller = textController else { return }
-        try controller.textView.string.write(to: url, atomically: true, encoding: encoding)
+        guard let data = controller.textView.string.data(using: encoding) else {
+            throw CocoaError(.fileWriteInapplicableStringEncoding, userInfo: [NSURLErrorKey: url])
+        }
+        try data.write(to: url, options: .atomic)
+        diskSnapshot = Self.attributes(of: url).map { DiskSnapshot(attributes: $0, digest: Self.digest(of: data)) }
         isDirty = false
+        isMissingOnDisk = false
+    }
+
+    // MARK: Changes on disk
+
+    enum DiskChange {
+        case unchanged
+        case modified(Data?)
+        case deleted
+    }
+
+    /// Compares the file on disk with what Silica last read or wrote. A new
+    /// modification date with the same bytes (a `touch`, a checkout of the same
+    /// content) counts as unchanged.
+    func diskChange() -> DiskChange {
+        guard let attributes = Self.attributes(of: url) else { return .deleted }
+        guard let snapshot = diskSnapshot else { return .modified(nil) }
+        if snapshot.matches(attributes) { return .unchanged }
+        // Images and other files that aren't kept as text are compared by date and size only.
+        guard snapshot.digest != nil else { return .modified(nil) }
+        guard let data = try? Data(contentsOf: url) else { return .deleted }
+        if Self.digest(of: data) == snapshot.digest {
+            diskSnapshot = DiskSnapshot(attributes: attributes, digest: snapshot.digest)
+            return .unchanged
+        }
+        return .modified(data)
+    }
+
+    /// Notes whether the file still exists and, for unedited text, takes in changes
+    /// made by other apps. Returns `true` if the buffer can't follow the change itself
+    /// (it isn't text) and should be opened again.
+    func syncWithDisk() -> Bool {
+        switch diskChange() {
+        case .unchanged:
+            if isMissingOnDisk { isMissingOnDisk = false }
+            return false
+        case .deleted:
+            if !isMissingOnDisk { isMissingOnDisk = true }
+            return false
+        case .modified(let data):
+            if isMissingOnDisk { isMissingOnDisk = false }
+            guard textController != nil else { return true }
+            // Edited here too: keep the edits; saving asks which version wins.
+            if !isDirty, let data { revert(to: data) }
+            return false
+        }
+    }
+
+    /// Replaces the text with the file on disk, discarding unsaved edits. It's one
+    /// undoable change, so ⌘Z brings the edits back.
+    func revertToDisk() {
+        guard let data = try? Data(contentsOf: url) else { return }
+        revert(to: data)
+    }
+
+    private func revert(to data: Data) {
+        guard let controller = textController, !Self.looksBinary(data),
+              let (text, newEncoding) = Self.decode(data) else { return }
+        encoding = newEncoding
+        controller.replaceText(with: text)
+        diskSnapshot = Self.attributes(of: url).map { DiskSnapshot(attributes: $0, digest: Self.digest(of: data)) }
+        isDirty = false
+        isMissingOnDisk = false
+        if isShowingPreview, let preview {
+            preview.topVisibleLine { line in
+                preview.show(markdown: controller.textView.string, line: line)
+            }
+        }
+    }
+
+    struct DiskSnapshot {
+        let modificationDate: Date?
+        let size: Int?
+        /// SHA-256 of the bytes, for text files.
+        let digest: Data?
+
+        init(attributes: FileAttributes, digest: Data?) {
+            modificationDate = attributes.modificationDate
+            size = attributes.size
+            self.digest = digest
+        }
+
+        func matches(_ attributes: FileAttributes) -> Bool {
+            modificationDate == attributes.modificationDate && size == attributes.size
+        }
+    }
+
+    struct FileAttributes {
+        let modificationDate: Date?
+        let size: Int?
+    }
+
+    private static func attributes(of url: URL) -> FileAttributes? {
+        guard let attributes = try? FileManager.default.attributesOfItem(atPath: url.path(percentEncoded: false)) else {
+            return nil
+        }
+        return FileAttributes(
+            modificationDate: attributes[.modificationDate] as? Date,
+            size: (attributes[.size] as? NSNumber)?.intValue
+        )
+    }
+
+    private static func digest(of data: Data) -> Data {
+        Data(SHA256.hash(data: data))
     }
 
     /// Raster image formats ImageIO can decode. SVG stays text so it can be edited.
