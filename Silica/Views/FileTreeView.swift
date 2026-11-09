@@ -21,8 +21,12 @@ struct FileTreeView: View {
             switch workspace.sidebarMode {
             case .explorer:
                 tree
-                TreeFilterField(workspace: workspace)
-                    .padding(8)
+                    // The filter floats over the bottom of the list, and rows scroll
+                    // under it (the list ends with room to scroll them clear).
+                    .overlay(alignment: .bottom) {
+                        TreeFilterField(workspace: workspace)
+                            .padding(8)
+                    }
             case .search:
                 ProjectSearchView(workspace: workspace, model: workspace.search)
             }
@@ -68,6 +72,10 @@ struct FileTreeView: View {
 
     // MARK: Tree
 
+    /// The filter field's height plus its padding, so the last row ends up just
+    /// above the field.
+    private static let filterFieldClearance: CGFloat = 44
+
     private var tree: some View {
         ScrollViewReader { proxy in
             List(selection: $workspace.selection) {
@@ -90,6 +98,13 @@ struct FileTreeView: View {
                         }
                     }
                 }
+                // Room to scroll the last rows up from under the filter field
+                // (`contentMargins` and `safeAreaInset` don't work for this list).
+                Color.clear
+                    .frame(height: Self.filterFieldClearance)
+                    .listRowInsets(EdgeInsets())
+                    .selectionDisabled()
+                    .accessibilityHidden(true)
             }
             .listStyle(.sidebar)
             .scrollContentBackground(.hidden)
@@ -127,6 +142,15 @@ struct FileTreeView: View {
                 guard let url = workspace.revealedURL else { return }
                 DispatchQueue.main.async {
                     withAnimation(.snappy) { proxy.scrollTo(url, anchor: .center) }
+                }
+            }
+            // A file revealed before the tree existed: the active tab of a new
+            // window (restored, or opened from Finder). onChange only sees later
+            // reveals, so scroll to it once the list has its rows.
+            .onAppear {
+                guard let url = workspace.revealedURL else { return }
+                DispatchQueue.main.async {
+                    proxy.scrollTo(url, anchor: .center)
                 }
             }
         }
