@@ -159,10 +159,13 @@ private struct BufferView: View {
             if buffer.isShowingPreview, let preview = buffer.preview {
                 MarkdownPreviewHost(preview: preview)
             } else {
-                VStack(spacing: 0) {
-                    TextViewHost(controller: controller)
-                    StatusBar(buffer: buffer, workspace: workspace)
-                }
+                // The status bar floats over the text's bottom corner rather than
+                // taking a strip of the card.
+                TextViewHost(controller: controller)
+                    .overlay(alignment: .bottomTrailing) {
+                        StatusBar(buffer: buffer, workspace: workspace)
+                            .padding(8)
+                    }
             }
         case .image(let file):
             ImagePreview(file: file)
@@ -190,15 +193,14 @@ private struct BufferView: View {
 
 // MARK: - Status bar
 
-/// Cursor position, indentation, encoding, line endings and language, along the
-/// bottom of the editor card.
+/// Cursor position, indentation, encoding, line endings and language, in a small
+/// line over the bottom-right corner of the editor.
 private struct StatusBar: View {
     let buffer: EditorBuffer
     let workspace: WorkspaceModel
 
     var body: some View {
-        HStack(spacing: 16) {
-            Spacer(minLength: 0)
+        HStack(spacing: 12) {
             Button(action: workspace.showGoToLine) {
                 Text(position)
             }
@@ -213,8 +215,9 @@ private struct StatusBar: View {
         .monospacedDigit()
         .foregroundStyle(.secondary)
         .lineLimit(1)
-        .padding(.horizontal, 14)
-        .frame(height: 24)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 4)
+        .fixedSize()
     }
 
     private var position: String {
