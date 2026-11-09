@@ -2,8 +2,6 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<!-- Merged into the generated Info.plist. Lets Finder's Open With, the Dock
-	     icon and `open -a Silica` hand files and folders to Silica. -->
 	<key>CFBundleDocumentTypes</key>
 	<array>
 		<dict>
@@ -32,17 +30,11 @@
 			</array>
 		</dict>
 	</array>
-
-	<!-- Sparkle updates. The feed is docs/appcast.xml served by GitHub Pages; changing
-	     this URL after a release strands the users of that release on it. -->
-	<key>SUFeedURL</key>
-	<string>https://dqhieu.github.io/Silica/appcast.xml</string>
-	<!-- Public half of the EdDSA key in the release machine's Keychain
-	     (Sparkle's generate_keys, account "ed25519"). Updates must be signed with it. -->
-	<key>SUPublicEDKey</key>
-	<string>T9aDbtANF0yr9ZMLWC98FVvzQiAmkIPy/JggQKIEvl0=</string>
-	<!-- Check daily without first asking; Settings › General turns it off. -->
 	<key>SUEnableAutomaticChecks</key>
 	<true/>
+	<key>SUFeedURL</key>
+	<string>https://dqhieu.github.io/Silica/appcast.xml</string>
+	<key>SUPublicEDKey</key>
+	<string>T9aDbtANF0yr9ZMLWC98FVvzQiAmkIPy/JggQKIEvl0=</string>
 </dict>
 </plist>

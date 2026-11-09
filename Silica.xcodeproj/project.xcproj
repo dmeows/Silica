@@ -17,8 +17,7 @@
       "version": {
         "up-to-next-major-version": "0.5.0",
       },
-    },
-    {
+    }, {
       "kind": "remote",
       "repository": "https://github.com/sparkle-project/Sparkle",
       "version": {
@@ -49,13 +48,12 @@
       ],
       "package-product-members": [
         {
-          "package": "swift-markdown",
-          "product-name": "Markdown",
-          "build-phase": { "build-phase": "frameworks" },
-        },
-        {
           "package": "Sparkle",
           "product-name": "Sparkle",
+          "build-phase": { "build-phase": "frameworks" },
+        }, {
+          "package": "swift-markdown",
+          "product-name": "Markdown",
           "build-phase": { "build-phase": "frameworks" },
         },
       ],
@@ -70,7 +68,7 @@
         "GENERATE_INFOPLIST_FILE": "YES",
         "INFOPLIST_FILE": "Config/Info.plist",
         "INFOPLIST_KEY_LSApplicationCategoryType": "public.app-category.developer-tools",
-        "INFOPLIST_KEY_NSHumanReadableCopyright": "© 2026 dqhieu",
+        "INFOPLIST_KEY_NSHumanReadableCopyright": "© 2026 Dinh Quang Hieu",
         "INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphoneos*]": "YES",
         "INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphonesimulator*]": "YES",
         "INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents[sdk=iphoneos*]": "YES",
