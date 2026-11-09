@@ -77,11 +77,12 @@ final class SyntaxHighlighter {
             return
         }
 
+        let theme = EditorSettings.shared.syntaxTheme
         let length = storage.length
         storage.beginEditing()
         storage.addAttribute(.foregroundColor, value: SyntaxTheme.plain, range: NSRange(location: 0, length: length))
         for token in tokens where NSMaxRange(token.range) <= length {
-            storage.addAttribute(.foregroundColor, value: SyntaxTheme.color(for: token.kind), range: token.range)
+            storage.addAttribute(.foregroundColor, value: theme.color(for: token.kind), range: token.range)
         }
         storage.endEditing()
     }

@@ -6,6 +6,7 @@ extension Notification.Name {
     static let editorWrapDidChange = Notification.Name("EditorWrapDidChange")
     /// Font, tab width, line numbers or indent guides changed.
     static let editorSettingsDidChange = Notification.Name("EditorSettingsDidChange")
+    static let syntaxThemeDidChange = Notification.Name("SyntaxThemeDidChange")
 }
 
 /// App-wide editor preferences, saved in UserDefaults. Each value is stored only
@@ -26,6 +27,7 @@ final class EditorSettings {
         static let indentsWithTabs = "editorIndentsWithTabs"
         static let showsLineNumbers = "editorShowsLineNumbers"
         static let showsIndentGuides = "editorShowsIndentGuides"
+        static let syntaxTheme = "syntaxTheme"
         static let appearance = "appearance"
         static let restoresTabs = "restoresOpenTabs"
     }
@@ -85,6 +87,15 @@ final class EditorSettings {
         }
     }
 
+    /// Colors for highlighted code, in the editor and in Markdown previews.
+    var syntaxTheme: SyntaxTheme {
+        didSet {
+            guard syntaxTheme != oldValue else { return }
+            store(syntaxTheme.rawValue, Key.syntaxTheme, isDefault: syntaxTheme == .default)
+            NotificationCenter.default.post(name: .syntaxThemeDidChange, object: self)
+        }
+    }
+
     enum Appearance: String, CaseIterable, Identifiable {
         case system, light, dark
         var id: Self { self }
@@ -121,6 +132,7 @@ final class EditorSettings {
         indentsWithTabs = defaults.bool(forKey: Key.indentsWithTabs)
         showsLineNumbers = defaults.object(forKey: Key.showsLineNumbers) as? Bool ?? true
         showsIndentGuides = defaults.object(forKey: Key.showsIndentGuides) as? Bool ?? true
+        syntaxTheme = defaults.string(forKey: Key.syntaxTheme).flatMap(SyntaxTheme.init(rawValue:)) ?? .default
         appearance = defaults.string(forKey: Key.appearance).flatMap(Appearance.init(rawValue:)) ?? .system
         restoresTabs = defaults.object(forKey: Key.restoresTabs) as? Bool ?? true
     }

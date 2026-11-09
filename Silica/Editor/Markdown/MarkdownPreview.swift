@@ -48,6 +48,16 @@ final class MarkdownPreview: NSObject, WKNavigationDelegate, WKScriptMessageHand
         webView.underPageBackgroundColor = .clear
         webView.setValue(false, forKey: "drawsBackground")
         webView.onType = { [weak self] characters in self?.onType?(characters) }
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(syntaxThemeDidChange),
+            name: .syntaxThemeDidChange, object: nil
+        )
+    }
+
+    /// Swaps in the new code colors without reloading, so the scroll position stays.
+    @objc private func syntaxThemeDidChange() {
+        guard let data = try? JSONEncoder().encode(Self.css), let css = String(data: data, encoding: .utf8) else { return }
+        webView.evaluateJavaScript("{ const style = document.querySelector('head > style'); if (style) style.textContent = \(css); }", in: nil, in: .defaultClient) { _ in }
     }
 
     /// Renders `markdown` and, once loaded, scrolls to the block nearest `line`.
@@ -134,8 +144,9 @@ final class MarkdownPreview: NSObject, WKNavigationDelegate, WKScriptMessageHand
 
     private static var tokenCSS: (light: String, dark: String) {
         var light = "", dark = ""
+        let theme = EditorSettings.shared.syntaxTheme
         for kind in TokenKind.allCases {
-            let pair = SyntaxTheme.hexPair(for: kind)
+            let pair = theme.hexPair(for: kind)
             light += ".tok-\(kind) { color: \(hex(pair.light)); }\n"
             dark += ".tok-\(kind) { color: \(hex(pair.dark)); }\n"
         }
@@ -146,7 +157,7 @@ final class MarkdownPreview: NSObject, WKNavigationDelegate, WKScriptMessageHand
         let size = Int(EditorSettings.shared.fontSize) + 1
         // Code in the editor's font, when one is chosen in Settings.
         let codeFont = EditorSettings.shared.fontFamily.map { "\"\($0.replacingOccurrences(of: "\"", with: ""))\", " } ?? ""
-        let link = SyntaxTheme.blue
+        let link = EditorSettings.shared.syntaxTheme.linkPair
         let tokens = tokenCSS
         return """
         :root { color-scheme: light dark; }

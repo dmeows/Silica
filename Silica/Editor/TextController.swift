@@ -80,6 +80,10 @@ final class TextController: NSObject, NSTextViewDelegate {
             self, selector: #selector(settingsDidChange),
             name: .editorSettingsDidChange, object: nil
         )
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(syntaxThemeDidChange),
+            name: .syntaxThemeDidChange, object: nil
+        )
         scrollView.contentView.postsBoundsChangedNotifications = true
         NotificationCenter.default.addObserver(
             self, selector: #selector(updateGutterMask),
@@ -274,6 +278,10 @@ final class TextController: NSObject, NSTextViewDelegate {
     }
 
     /// Font family, tab width, line numbers or indent guides changed in Settings.
+    @objc private func syntaxThemeDidChange() {
+        highlighter?.highlightNow()
+    }
+
     @objc private func settingsDidChange() {
         let settings = EditorSettings.shared
         fontSizeDidChange()

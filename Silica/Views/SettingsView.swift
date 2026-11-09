@@ -22,14 +22,14 @@ struct SettingsView: View {
     }
 }
 
-/// Editor font and indentation, what the editor shows, appearance, and whether
+/// Editor font, syntax colors and indentation, what the editor shows, appearance, and whether
 /// projects reopen their tabs. Changes apply to open editors at once.
 private struct GeneralSettingsView: View {
     @Bindable private var settings = EditorSettings.shared
 
     var body: some View {
         Form {
-            Section("Font") {
+            Section("Font & Colors") {
                 Picker("Font", selection: fontFamily) {
                     Text("SF Mono (System)").tag("")
                     Divider()
@@ -47,9 +47,15 @@ private struct GeneralSettingsView: View {
                     }
                 }
 
-                Text(sample)
+                Picker("Syntax colors", selection: $settings.syntaxTheme) {
+                    ForEach(SyntaxTheme.allCases) { theme in
+                        Text(theme.name).tag(theme)
+                    }
+                }
+
+                Text(highlightedSample)
                     .font(Font(settings.editorFont(ofSize: settings.fontSize)))
-                    .lineLimit(3)
+                    .lineLimit(5)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(10)
                     .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(.primary.opacity(0.05)))
@@ -96,7 +102,22 @@ private struct GeneralSettingsView: View {
     }
 
     private var sample: String {
-        "func greet(_ name: String) -> String {\n" + String(repeating: " ", count: settings.tabWidth) + "return \"Hello, \\(name)!\"\n}"
+        let indent = String(repeating: " ", count: settings.tabWidth)
+        return "// Says hello.\nfunc greet(_ name: String) -> String {\n"
+            + indent + "let count = 2\n"
+            + indent + "return \"Hello, \\(name)!\"\n}"
+    }
+
+    /// The sample, colored by the chosen theme the way the editor colors Swift.
+    private var highlightedSample: AttributedString {
+        let text = sample
+        var result = AttributedString(text)
+        let theme = settings.syntaxTheme
+        for token in SyntaxLanguage.swift.grammar.tokenize(text as NSString) {
+            guard let range = Range(token.range, in: result) else { continue }
+            result[range].foregroundColor = Color(nsColor: theme.color(for: token.kind))
+        }
+        return result
     }
 
     /// "" stands for the system font in the picker.
