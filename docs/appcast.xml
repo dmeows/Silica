@@ -3,6 +3,26 @@
     <channel>
         <title>Silica</title>
         <item>
+            <title>0.1.1</title>
+            <pubDate>Mon, 09 Nov 2026 22:35:50 +0800</pubDate>
+            <link>https://github.com/dqhieu/Silica</link>
+            <sparkle:fullReleaseNotesLink>https://github.com/dqhieu/Silica/releases</sparkle:fullReleaseNotesLink>
+            <sparkle:version>3</sparkle:version>
+            <sparkle:shortVersionString>0.1.1</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>26.0</sparkle:minimumSystemVersion>
+            <description sparkle:format="markdown"><![CDATA[### What's new
+
+- **Runs on macOS 26.** Silica now needs macOS 26 or later, down from macOS 27.
+- **A nicer installer.** The DMG opens to a window with Silica and your Applications folder side by side, so installing is one drag.
+
+If you already have 0.1.0, Silica will offer this update on its own, or choose **Silica › Check for Updates…**.
+
+Found a bug or have an idea? Please [open an issue](https://github.com/dqhieu/Silica/issues).
+
+]]></description>
+            <enclosure url="https://github.com/dqhieu/Silica/releases/download/v0.1.1/Silica-0.1.1.dmg" length="7611632" type="application/octet-stream" sparkle:edSignature="Te4UqkrpCuN5clid7H6aB80GAwzIIZqt80xd3m+xmziySCG/8AiEm6rkQrj3PWE2Y373bWg3iXau4idLb3v3Bg=="/>
+        </item>
+        <item>
             <title>0.1.0</title>
             <pubDate>Mon, 09 Nov 2026 22:17:30 +0800</pubDate>
             <link>https://github.com/dqhieu/Silica</link>
