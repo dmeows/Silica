@@ -68,9 +68,19 @@ struct AppCommands: Commands {
 
             Divider()
 
-            Button("Close Editor Tab") { workspace?.closeActiveTab() }
-                .keyboardShortcut("w", modifiers: [.command, .option])
-                .disabled(workspace?.activeTab == nil)
+            // As in VS Code: ⌘W closes the tab, and the window once no tabs are left.
+            Button("Close Tab") {
+                if let workspace, workspace.activeTab != nil {
+                    workspace.closeActiveTab()
+                } else {
+                    NSApp.keyWindow?.performClose(nil)
+                }
+            }
+            .keyboardShortcut("w")
+
+            // ⇧⌘W is also handled by KeyWorkspace.installKeyboardShortcuts().
+            Button("Close Window") { NSApp.keyWindow?.performClose(nil) }
+                .keyboardShortcut("w", modifiers: [.command, .shift])
         }
 
         CommandGroup(replacing: .sidebar) {

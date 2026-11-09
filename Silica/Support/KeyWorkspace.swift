@@ -42,6 +42,8 @@ final class KeyWorkspace: ObservableObject {
             case "s":
                 guard workspace.activeBuffer?.textController != nil else { return event }
                 workspace.saveActiveAs()
+            case "w":
+                event.window?.performClose(nil)
             default:
                 return event
             }
