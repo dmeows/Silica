@@ -32,5 +32,17 @@
 			</array>
 		</dict>
 	</array>
+
+	<!-- Sparkle updates. The feed is docs/appcast.xml served by GitHub Pages; changing
+	     this URL after a release strands the users of that release on it. -->
+	<key>SUFeedURL</key>
+	<string>https://dqhieu.github.io/Silica/appcast.xml</string>
+	<!-- Public half of the EdDSA key in the release machine's Keychain
+	     (Sparkle's generate_keys, account "ed25519"). Updates must be signed with it. -->
+	<key>SUPublicEDKey</key>
+	<string>T9aDbtANF0yr9ZMLWC98FVvzQiAmkIPy/JggQKIEvl0=</string>
+	<!-- Check daily without first asking; Settings › General turns it off. -->
+	<key>SUEnableAutomaticChecks</key>
+	<true/>
 </dict>
 </plist>

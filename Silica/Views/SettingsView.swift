@@ -161,9 +161,10 @@ private struct SettingsSidebar: View {
     }
 }
 
-/// Appearance and whether projects reopen their tabs.
+/// Appearance, whether projects reopen their tabs, and update checks.
 private struct GeneralSettingsPane: View {
     @Bindable private var settings = EditorSettings.shared
+    @ObservedObject private var updater = AppUpdater.shared
 
     var body: some View {
         SettingsForm {
@@ -182,6 +183,14 @@ private struct GeneralSettingsPane: View {
 
             SettingsGroup("Projects") {
                 SettingsToggle("Reopen a project’s tabs where you left them", isOn: $settings.restoresTabs)
+            }
+
+            SettingsGroup("Updates") {
+                SettingsToggle("Check for updates automatically", isOn: $updater.automaticallyChecksForUpdates)
+                SettingsRow("Version \(AppInfo.version) (\(AppInfo.build))") {
+                    Button("Check Now") { updater.checkForUpdates() }
+                        .disabled(!updater.canCheckForUpdates)
+                }
             }
         }
     }

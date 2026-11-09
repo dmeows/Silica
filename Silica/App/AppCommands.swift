@@ -6,6 +6,7 @@ struct AppCommands: Commands {
     /// `focusedSceneValue` came back nil while the editor's NSTextView had focus.
     @ObservedObject private var keyWorkspace = KeyWorkspace.shared
     private var workspace: WorkspaceModel? { keyWorkspace.current }
+    @ObservedObject private var updater = AppUpdater.shared
 
     private var recents: RecentProjectsStore { .shared }
     private var settings: EditorSettings { .shared }
@@ -21,6 +22,9 @@ struct AppCommands: Commands {
                 UserDefaults.standard.set(SettingsView.Pane.about.rawValue, forKey: SettingsView.paneKey)
                 openWindow(id: WindowID.settings)
             }
+
+            Button("Check for Updates…") { updater.checkForUpdates() }
+                .disabled(!updater.canCheckForUpdates)
         }
 
         // Settings is a regular Window scene (so it can resize), which doesn't get

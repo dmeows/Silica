@@ -14,6 +14,8 @@ struct SilicaApp: App {
         EditorSettings.shared.installKeyboardShortcuts()
         MenuShortcutRefresh.install()
         KeyWorkspace.shared.installKeyboardShortcuts()
+        // Starts Sparkle, which schedules the daily update check.
+        _ = AppUpdater.shared
     }
 
     var body: some Scene {
