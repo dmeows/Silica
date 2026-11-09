@@ -164,7 +164,7 @@ private struct BufferView: View {
                 TextViewHost(controller: controller)
                     .overlay(alignment: .bottomTrailing) {
                         StatusBar(buffer: buffer, workspace: workspace)
-                            .padding(8)
+                            .padding(4)
                     }
             }
         case .image(let file):
@@ -217,6 +217,7 @@ private struct StatusBar: View {
         .lineLimit(1)
         .padding(.horizontal, 10)
         .padding(.vertical, 4)
+        .glassEffect(.regular, in: .capsule)
         .fixedSize()
     }
 
