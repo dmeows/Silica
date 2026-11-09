@@ -82,6 +82,7 @@ private struct GeneralSettingsView: View {
             Section("Editor") {
                 Toggle("Show line numbers", isOn: $settings.showsLineNumbers)
                 Toggle("Show indent guides", isOn: $settings.showsIndentGuides)
+                Toggle("Show minimap", isOn: $settings.showsMinimap)
                 Toggle("Wrap long lines", isOn: $settings.wrapsLines)
             }
 

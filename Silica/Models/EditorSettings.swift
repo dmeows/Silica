@@ -4,7 +4,7 @@ import Observation
 extension Notification.Name {
     static let editorFontSizeDidChange = Notification.Name("EditorFontSizeDidChange")
     static let editorWrapDidChange = Notification.Name("EditorWrapDidChange")
-    /// Font, tab width, line numbers or indent guides changed.
+    /// Font, tab width, line numbers, indent guides or the minimap changed.
     static let editorSettingsDidChange = Notification.Name("EditorSettingsDidChange")
     static let syntaxThemeDidChange = Notification.Name("SyntaxThemeDidChange")
 }
@@ -27,6 +27,7 @@ final class EditorSettings {
         static let indentsWithTabs = "editorIndentsWithTabs"
         static let showsLineNumbers = "editorShowsLineNumbers"
         static let showsIndentGuides = "editorShowsIndentGuides"
+        static let showsMinimap = "editorShowsMinimap"
         static let syntaxTheme = "syntaxTheme"
         static let appearance = "appearance"
         static let restoresTabs = "restoresOpenTabs"
@@ -87,6 +88,15 @@ final class EditorSettings {
         }
     }
 
+    /// An overview of the file down the editor's right edge.
+    var showsMinimap: Bool {
+        didSet {
+            guard showsMinimap != oldValue else { return }
+            store(showsMinimap, Key.showsMinimap, isDefault: showsMinimap)
+            NotificationCenter.default.post(name: .editorSettingsDidChange, object: self)
+        }
+    }
+
     /// Colors for highlighted code, in the editor and in Markdown previews.
     var syntaxTheme: SyntaxTheme {
         didSet {
@@ -132,6 +142,7 @@ final class EditorSettings {
         indentsWithTabs = defaults.bool(forKey: Key.indentsWithTabs)
         showsLineNumbers = defaults.object(forKey: Key.showsLineNumbers) as? Bool ?? true
         showsIndentGuides = defaults.object(forKey: Key.showsIndentGuides) as? Bool ?? true
+        showsMinimap = defaults.object(forKey: Key.showsMinimap) as? Bool ?? true
         syntaxTheme = defaults.string(forKey: Key.syntaxTheme).flatMap(SyntaxTheme.init(rawValue:)) ?? .default
         appearance = defaults.string(forKey: Key.appearance).flatMap(Appearance.init(rawValue:)) ?? .system
         restoresTabs = defaults.object(forKey: Key.restoresTabs) as? Bool ?? true

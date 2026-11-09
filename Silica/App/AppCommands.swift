@@ -138,6 +138,11 @@ struct AppCommands: Commands {
             ))
             .keyboardShortcut("z", modifiers: .option)
 
+            Toggle("Minimap", isOn: Binding(
+                get: { settings.showsMinimap },
+                set: { settings.showsMinimap = $0 }
+            ))
+
             Divider()
 
             // ⌘= also zooms in; see EditorSettings.installKeyboardShortcuts().

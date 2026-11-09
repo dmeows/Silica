@@ -4,17 +4,21 @@ import SwiftUI
 /// Owns the NSTextView for one buffer. Kept alive per tab so undo history,
 /// selection and scroll position survive switching tabs.
 final class TextController: NSObject, NSTextViewDelegate {
+    /// What goes in the editor card: the scroll view, with the minimap beside it.
+    let view: EditorContainerView
     let scrollView: NSScrollView
     let textView: EditorTextView
     weak var buffer: EditorBuffer?
     private var highlighter: SyntaxHighlighter?
     private var lineNumbers: LineNumberRulerView?
+    private var minimap: MinimapView!
 
     init(text: String, language: SyntaxLanguage?) {
         // Built by hand: `EditorTextView.scrollableTextView()` returned a TextKit 1 view,
         // and the gutter and indent guides draw through TextKit 2.
         scrollView = NSScrollView()
         textView = EditorTextView(usingTextLayoutManager: true)
+        view = EditorContainerView(scrollView: scrollView)
         super.init()
 
         let contentSize = scrollView.contentSize
@@ -61,6 +65,10 @@ final class TextController: NSObject, NSTextViewDelegate {
         scrollView.hasVerticalRuler = true
         scrollView.rulersVisible = EditorSettings.shared.showsLineNumbers
         lineNumbers = ruler
+
+        minimap = MinimapView(controller: self)
+        view.minimap = minimap
+        view.showsMinimap = EditorSettings.shared.showsMinimap
 
         if let language {
             highlighter = SyntaxHighlighter(textView: textView, language: language)
@@ -215,6 +223,62 @@ final class TextController: NSObject, NSTextViewDelegate {
 
     var lineCount: Int { lineNumbers?.lineCount ?? 1 }
 
+    /// The 1-based line containing the UTF-16 `offset`.
+    func lineNumber(at offset: Int) -> Int { lineNumbers?.lineNumber(at: offset) ?? 1 }
+
+    /// Where the 1-based `line` starts.
+    func offset(ofLine line: Int) -> Int { lineNumbers?.offset(ofLine: line) ?? 0 }
+
+    // MARK: Scrolling (for the minimap)
+
+    var scrollY: CGFloat { scrollView.contentView.bounds.minY }
+
+    var maxScrollY: CGFloat {
+        max(0, textView.frame.height - scrollView.contentView.bounds.height)
+    }
+
+    /// 0 at the top, 1 scrolled to the bottom.
+    var scrollFraction: CGFloat {
+        maxScrollY > 0 ? min(max(scrollY / maxScrollY, 0), 1) : 0
+    }
+
+    /// Scrolls vertically, keeping any sideways scroll.
+    func setScrollY(_ y: CGFloat) {
+        let clipView = scrollView.contentView
+        clipView.scroll(to: NSPoint(x: clipView.bounds.minX, y: min(max(y, 0), maxScrollY)))
+        scrollView.reflectScrolledClipView(clipView)
+    }
+
+    /// The 1-based lines at least partly on screen.
+    func visibleLineRange() -> ClosedRange<Int> {
+        guard let layoutManager = textView.textLayoutManager,
+              let contentManager = layoutManager.textContentManager else { return 1...1 }
+        let origin = textView.textContainerOrigin
+        let visible = textView.visibleRect
+        let documentStart = layoutManager.documentRange.location
+        func line(atY y: CGFloat) -> Int? {
+            guard let fragment = layoutManager.textLayoutFragment(for: CGPoint(x: 0, y: max(0, y - origin.y))) else { return nil }
+            // A layout fragment is one paragraph, so one logical line however it wraps.
+            return lineNumber(at: contentManager.offset(from: documentStart, to: fragment.rangeInElement.location))
+        }
+        let first = line(atY: visible.minY + 1) ?? 1
+        let last = line(atY: visible.maxY - 1) ?? lineCount
+        return first...max(first, last)
+    }
+
+    /// Scrolls so the 1-based `line` is in the middle of the editor.
+    func center(line: Int) {
+        guard let layoutManager = textView.textLayoutManager,
+              let contentManager = layoutManager.textContentManager,
+              let location = contentManager.location(layoutManager.documentRange.location, offsetBy: offset(ofLine: line)),
+              let range = NSTextRange(location: layoutManager.documentRange.location, end: location) else { return }
+        layoutManager.ensureLayout(for: range)
+        guard let fragment = layoutManager.textLayoutFragment(for: location) else { return }
+        let frame = fragment.layoutFragmentFrame
+        let midY = frame.minY + textView.textContainerOrigin.y + min(frame.height, 20) / 2
+        setScrollY(midY - scrollView.contentView.bounds.height / 2)
+    }
+
     private func focus() {
         textView.window?.makeFirstResponder(textView)
     }
@@ -292,6 +356,13 @@ final class TextController: NSObject, NSTextViewDelegate {
             scrollView.rulersVisible = settings.showsLineNumbers
             applyWrapping()
         }
+        if view.showsMinimap != settings.showsMinimap {
+            view.showsMinimap = settings.showsMinimap
+            // The text's width changed; rewrap and keep the cursor in view.
+            view.layoutSubtreeIfNeeded()
+            applyWrapping()
+        }
+        minimap.needsDisplay = true
         updateGutterMask()
         scheduleStatusUpdate()
     }
@@ -409,16 +480,55 @@ struct TextViewHost: NSViewRepresentable {
         func show(_ controller: TextController) {
             guard current !== controller else { return }
             current?.willDisappear()
-            current?.scrollView.removeFromSuperview()
-            let scrollView = controller.scrollView
-            scrollView.frame = bounds
-            scrollView.autoresizingMask = [.width, .height]
-            addSubview(scrollView)
+            current?.view.removeFromSuperview()
+            let editorView = controller.view
+            editorView.frame = bounds
+            editorView.autoresizingMask = [.width, .height]
+            addSubview(editorView)
             current = controller
             DispatchQueue.main.async { [weak self] in
                 self?.window?.makeFirstResponder(controller.textView)
                 controller.didAppear()
             }
         }
+    }
+}
+
+/// The scroll view, and the minimap in a strip down its right side when shown.
+/// The text wraps short of the minimap rather than running under it.
+final class EditorContainerView: NSView {
+    let scrollView: NSScrollView
+
+    var minimap: MinimapView? {
+        didSet {
+            oldValue?.removeFromSuperview()
+            if let minimap { addSubview(minimap) }
+            needsLayout = true
+        }
+    }
+
+    var showsMinimap = true {
+        didSet { needsLayout = true }
+    }
+
+    init(scrollView: NSScrollView) {
+        self.scrollView = scrollView
+        super.init(frame: .zero)
+        addSubview(scrollView)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override var isFlipped: Bool { true }
+
+    override func layout() {
+        super.layout()
+        let minimapWidth = showsMinimap && minimap != nil ? MinimapView.width : 0
+        scrollView.frame = NSRect(x: 0, y: 0, width: max(0, bounds.width - minimapWidth), height: bounds.height)
+        minimap?.isHidden = minimapWidth == 0
+        minimap?.frame = NSRect(x: bounds.width - minimapWidth, y: 0, width: minimapWidth, height: bounds.height)
     }
 }
