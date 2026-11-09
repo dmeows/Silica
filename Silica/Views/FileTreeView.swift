@@ -85,13 +85,6 @@ struct FileTreeView: View {
             Spacer(minLength: 0)
 
             Button {
-                workspace.refresh()
-            } label: {
-                Image(systemName: "arrow.clockwise")
-            }
-            .help("Refresh Explorer")
-
-            Button {
                 withAnimation { workspace.collapseAll() }
             } label: {
                 Image(systemName: "rectangle.compress.vertical")
