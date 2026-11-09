@@ -16,12 +16,12 @@ struct WelcomeView: View {
                 .padding(.vertical, 18)
                 .padding(.trailing, 18)
         }
-        // Up into the hidden title bar, so the recents card runs the window's full
+        // Up into the hidden title bar, so the recents list runs the window's full
         // height and the hero centers on the whole window.
         .ignoresSafeArea(.container, edges: .top)
         // Frosted, behind-window blur for the whole welcome window.
         .containerBackground(for: .window) {
-            VisualEffectView()
+          VisualEffectView(.hudWindow)
         }
         .overlay {
             if isDropTargeted {
@@ -134,11 +134,7 @@ struct WelcomeView: View {
                 .scrollEdgeEffectStyle(.soft, for: .vertical)
             }
         }
-        .padding(12)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        // Corners next to the window's follow its radius minus the inset, like the
-        // workspace's editor card; the others fall back to the minimum.
-        .glassEffect(.regular, in: ConcentricRectangle(corners: .concentric(minimum: .fixed(WorkspaceLayout.cardCornerRadius))))
     }
 
     // MARK: Drop
