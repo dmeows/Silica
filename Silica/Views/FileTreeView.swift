@@ -1,23 +1,12 @@
 import SwiftUI
 
-/// The sidebar: a header on the title bar row, then the file tree or, in search
-/// mode, Find in Project.
+/// The sidebar: a header floating on the title bar row, over the file tree or, in
+/// search mode, Find in Project.
 struct FileTreeView: View {
     @Bindable var workspace: WorkspaceModel
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            // Title bar row: traffic lights, then the header, then the toggle.
-            HStack(spacing: 8) {
-                header
-                SidebarToggleButton(workspace: workspace)
-            }
-            .frame(height: WorkspaceLayout.titleBarHeight)
-            .padding(.leading, WorkspaceLayout.trafficLightsWidth)
-            .padding(.trailing, 8)
-            // Above the list, which reaches up underneath this row (see below).
-            .zIndex(1)
-
+        Group {
             switch workspace.sidebarMode {
             case .explorer:
                 tree
@@ -29,6 +18,18 @@ struct FileTreeView: View {
                     }
             case .search:
                 ProjectSearchView(workspace: workspace, model: workspace.search)
+                    .padding(.top, WorkspaceLayout.titleBarHeight)
+            }
+        }
+        // The header floats over the top of the list in the same way, and rows
+        // scroll under it (the list keeps an empty bar for it; see `tree`),
+        // blurring more the closer they get to the top.
+        .overlay(alignment: .top) {
+            ZStack(alignment: .top) {
+                if workspace.sidebarMode == .explorer {
+                    HeaderBlur(height: WorkspaceLayout.titleBarHeight + 14)
+                }
+                titleBarRow
             }
         }
         .onChange(of: workspace.selection) {
@@ -37,6 +38,17 @@ struct FileTreeView: View {
     }
 
     // MARK: Header
+
+    /// Title bar row: traffic lights, then the header, then the toggle.
+    private var titleBarRow: some View {
+        HStack(spacing: 8) {
+            header
+            SidebarToggleButton(workspace: workspace)
+        }
+        .frame(height: WorkspaceLayout.titleBarHeight)
+        .padding(.leading, WorkspaceLayout.trafficLightsWidth)
+        .padding(.trailing, 8)
+    }
 
     private var header: some View {
         HStack(spacing: 8) {
@@ -113,6 +125,12 @@ struct FileTreeView: View {
             .listStyle(.sidebar)
             .scrollContentBackground(.hidden)
             .scrollIndicators(.never)
+            // An empty bar where the header floats, so the list starts below it. The
+            // system edge effect doesn't reach this list; `HeaderBlur` stands in for it.
+            .safeAreaBar(edge: .top, spacing: 0) {
+                Color.clear.frame(height: WorkspaceLayout.titleBarHeight)
+            }
+            .scrollEdgeEffectHidden(true, for: .top)
             // ← / → collapse and expand folders, as the system outline did.
             .onKeyPress(.rightArrow) { workspace.setSelectedFolderExpanded(true) ? .handled : .ignored }
             .onKeyPress(.leftArrow) { workspace.setSelectedFolderExpanded(false) ? .handled : .ignored }
@@ -210,6 +228,34 @@ struct FileTreeView: View {
         }
         add(workspace.root.children ?? [], depth: 0, in: workspace.root.url)
         return rows
+    }
+}
+
+// MARK: - Header blur
+
+/// A variable blur under the sidebar header: full strength at the top, fading to
+/// nothing a little below the title bar row, so rows scrolling up soften into it
+/// instead of running into the header.
+private struct HeaderBlur: View {
+    let height: CGFloat
+
+    var body: some View {
+        Rectangle()
+            .fill(.ultraThinMaterial)
+            .mask {
+                LinearGradient(
+                    stops: [
+                        .init(color: .black, location: 0),
+                        .init(color: .black, location: 0.45),
+                        .init(color: .clear, location: 1),
+                    ],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+            }
+            .frame(height: height)
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
     }
 }
 
