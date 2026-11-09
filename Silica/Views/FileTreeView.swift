@@ -42,14 +42,6 @@ struct FileTreeView: View {
 
             Spacer(minLength: 0)
 
-            Button {
-                if workspace.sidebarMode == .search { workspace.showExplorer() } else { workspace.showSearch() }
-            } label: {
-                Image(systemName: "magnifyingglass")
-                    .foregroundStyle(workspace.sidebarMode == .search ? AnyShapeStyle(.tint) : AnyShapeStyle(.secondary))
-            }
-            .help(workspace.sidebarMode == .search ? "Show Explorer (⇧⌘E)" : "Find in Project (⇧⌘F)")
-
             if workspace.sidebarMode == .explorer {
                 Button {
                     withAnimation { workspace.collapseAll() }
@@ -58,6 +50,15 @@ struct FileTreeView: View {
                 }
                 .help("Collapse Folders")
             }
+
+            // Last, so it stays in place when the Collapse button hides in search mode.
+            Button {
+                if workspace.sidebarMode == .search { workspace.showExplorer() } else { workspace.showSearch() }
+            } label: {
+                Image(systemName: "magnifyingglass")
+                    .foregroundStyle(workspace.sidebarMode == .search ? AnyShapeStyle(.tint) : AnyShapeStyle(.secondary))
+            }
+            .help(workspace.sidebarMode == .search ? "Show Explorer (⇧⌘E)" : "Find in Project (⇧⌘F)")
         }
         .buttonStyle(.borderless)
         .foregroundStyle(.secondary)
