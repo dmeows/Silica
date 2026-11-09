@@ -1,36 +1,208 @@
 import SwiftUI
 
-/// Settings (⌘,): a General tab for the editor and windows, and an About tab with
-/// the version and open-source licenses (also what Silica › About Silica shows).
+/// Settings (⌘,), laid out like System Settings: a sidebar of panes on the
+/// left and the chosen pane's grouped form on the right. About (also what
+/// Silica › About Silica shows) is the last pane.
 struct SettingsView: View {
-    enum Tab: String {
-        case general, about
+    enum Pane: String, CaseIterable, Identifiable {
+        case general, fontsAndColors, editor, about
+
+        var id: String { rawValue }
+
+        var title: String {
+            switch self {
+            case .general: "General"
+            case .fontsAndColors: "Fonts & Colors"
+            case .editor: "Editor"
+            case .about: "About"
+            }
+        }
+
+        var symbol: String {
+            switch self {
+            case .general: "gearshape.fill"
+            case .fontsAndColors: "textformat"
+            case .editor: "text.cursor"
+            case .about: "info"
+            }
+        }
+
+        var tint: Color {
+            switch self {
+            case .general: .gray
+            case .fontsAndColors: .blue
+            case .editor: .orange
+            case .about: .gray
+            }
+        }
     }
 
-    @AppStorage(SettingsView.tabKey) private var tab: Tab = .general
-    static let tabKey = "settingsTab"
+    @AppStorage(SettingsView.paneKey) private var pane: Pane = .general
+    static let paneKey = "settingsTab"
 
     var body: some View {
-        TabView(selection: $tab) {
-            GeneralSettingsView()
-                .tabItem { Label("General", systemImage: "gearshape") }
-                .tag(Tab.general)
-            AboutSettingsView()
-                .tabItem { Label("About", systemImage: "info.circle") }
-                .tag(Tab.about)
+        // Laid out by hand rather than with NavigationSplitView, which restores the
+        // sidebar width it autosaved over the width set here. The window's title bar is
+        // hidden, so the traffic lights sit over the sidebar.
+        HStack(spacing: 0) {
+            SettingsSidebar(selection: $pane)
+                .frame(width: 215)
+                .background(SettingsColors.sidebar)
+
+            detail
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                // Clear of the hidden title bar, so the first group title lines up with
+                // the first sidebar item; content still scrolls up to the window's edge.
+                .contentMargins(.top, Self.titleBarHeight + 8, for: .scrollContent)
+                .background(SettingsColors.detail)
+        }
+        .ignoresSafeArea(.container, edges: .top)
+        .frame(minWidth: 620, idealWidth: 760, maxWidth: .infinity,
+               minHeight: 460, idealHeight: 560, maxHeight: .infinity)
+    }
+
+    /// Height of the hidden title bar, which the traffic lights center in.
+    static let titleBarHeight: CGFloat = 32
+
+    @ViewBuilder
+    private var detail: some View {
+        switch pane {
+        case .general: GeneralSettingsPane()
+        case .fontsAndColors: FontsAndColorsSettingsPane()
+        case .editor: EditorSettingsPane()
+        case .about: AboutSettingsView()
+        }
+    }
+
+}
+
+/// A pane's symbol in white on a tinted rounded square, as System Settings draws them.
+struct SettingsIcon: View {
+    let pane: SettingsView.Pane
+    let size: CGFloat
+
+    var body: some View {
+        RoundedRectangle(cornerRadius: size * 0.25, style: .continuous)
+            .fill(pane.tint.gradient)
+            .frame(width: size, height: size)
+            .overlay {
+                Image(systemName: pane.symbol)
+                    .font(.system(size: size * 0.55, weight: .semibold))
+                    .foregroundStyle(.white)
+            }
+    }
+}
+
+/// The list of panes: a plain light column with a gray highlight on the chosen pane,
+/// rather than the List sidebar's glass and accent-colored selection. Up and down
+/// arrows move between panes while it has focus.
+private struct SettingsSidebar: View {
+    @Binding var selection: SettingsView.Pane
+    @FocusState private var isFocused: Bool
+
+    /// Panes in visual groups, split by a gap.
+    private let groups: [[SettingsView.Pane]] = [[.general, .fontsAndColors, .editor], [.about]]
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 14) {
+                ForEach(groups, id: \.self) { group in
+                    VStack(spacing: 0) {
+                        ForEach(group) { pane in
+                            item(pane)
+                        }
+                    }
+                }
+            }
+            .padding(.horizontal, 10)
+            .padding(.top, SettingsView.titleBarHeight + 18)
+            .padding(.bottom, 10)
+        }
+        .scrollBounceBehavior(.basedOnSize)
+        .focusable()
+        .focusEffectDisabled()
+        .focused($isFocused)
+        .onKeyPress(.upArrow) { step(by: -1) }
+        .onKeyPress(.downArrow) { step(by: 1) }
+    }
+
+    private func item(_ pane: SettingsView.Pane) -> some View {
+        let isSelected = pane == selection
+        return Button {
+            selection = pane
+            isFocused = true
+        } label: {
+            HStack(spacing: 10) {
+                SettingsIcon(pane: pane, size: 22)
+                Text(pane.title)
+                    .font(.system(size: 14, weight: isSelected ? .semibold : .regular))
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 6)
+            .frame(height: 36)
+            .contentShape(Rectangle())
+            .background {
+                if isSelected {
+                    RoundedRectangle(cornerRadius: 9, style: .continuous)
+                        .fill(.primary.opacity(0.07))
+                }
+            }
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func step(by offset: Int) -> KeyPress.Result {
+        let all = SettingsView.Pane.allCases
+        guard let index = all.firstIndex(of: selection) else { return .ignored }
+        let next = index + offset
+        guard all.indices.contains(next) else { return .handled }
+        selection = all[next]
+        return .handled
+    }
+}
+
+/// Appearance and whether projects reopen their tabs.
+private struct GeneralSettingsPane: View {
+    @Bindable private var settings = EditorSettings.shared
+
+    var body: some View {
+        SettingsForm {
+            SettingsGroup("Appearance") {
+                SettingsRow("Appearance") {
+                    Picker("Appearance", selection: $settings.appearance) {
+                        Text("System").tag(EditorSettings.Appearance.system)
+                        Text("Light").tag(EditorSettings.Appearance.light)
+                        Text("Dark").tag(EditorSettings.Appearance.dark)
+                    }
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
+                    .fixedSize()
+                }
+            }
+
+            SettingsGroup("Projects") {
+                SettingsToggle("Reopen a project’s tabs where you left them", isOn: $settings.restoresTabs)
+            }
         }
     }
 }
 
-/// Editor font, syntax colors and indentation, what the editor shows, appearance, and whether
-/// projects reopen their tabs. Changes apply to open editors at once.
-private struct GeneralSettingsView: View {
+/// Editor font and syntax colors, with a live sample. Changes apply to open editors at once.
+private struct FontsAndColorsSettingsPane: View {
     @Bindable private var settings = EditorSettings.shared
 
     var body: some View {
-        Form {
-            Section("Font & Colors") {
-                Picker("Font", selection: fontFamily) {
+        SettingsForm {
+            SettingsGroup("Font") {
+                Text(highlightedSample)
+                    .font(Font(settings.editorFont(ofSize: settings.fontSize)))
+                    .lineLimit(5)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(12)
+                    .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Color(nsColor: .textBackgroundColor)))
+                    .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(.primary.opacity(0.06)))
+                    .padding(.vertical, 3)
+                SettingsPicker("Font", selection: fontFamily) {
                     Text("SF Mono (System)").tag("")
                     Divider()
                     ForEach(EditorSettings.monospacedFamilies, id: \.self) { family in
@@ -38,7 +210,7 @@ private struct GeneralSettingsView: View {
                     }
                 }
 
-                LabeledContent("Size") {
+                SettingsRow("Size") {
                     HStack(spacing: 8) {
                         Text("\(Int(settings.fontSize)) pt")
                             .monospacedDigit()
@@ -46,60 +218,16 @@ private struct GeneralSettingsView: View {
                             .labelsHidden()
                     }
                 }
+            }
 
-                Picker("Syntax colors", selection: $settings.syntaxTheme) {
+            SettingsGroup("Colors") {
+                SettingsPicker("Syntax colors", selection: $settings.syntaxTheme) {
                     ForEach(SyntaxTheme.allCases) { theme in
                         Text(theme.name).tag(theme)
                     }
                 }
-
-                Text(highlightedSample)
-                    .font(Font(settings.editorFont(ofSize: settings.fontSize)))
-                    .lineLimit(5)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(10)
-                    .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(.primary.opacity(0.05)))
-            }
-
-            Section {
-                Picker("Tab width", selection: $settings.tabWidth) {
-                    ForEach(EditorSettings.tabWidths, id: \.self) { width in
-                        Text("\(width) spaces").tag(width)
-                    }
-                }
-                Picker("Indent new files with", selection: $settings.indentsWithTabs) {
-                    Text("Spaces").tag(false)
-                    Text("Tabs").tag(true)
-                }
-            } header: {
-                Text("Indentation")
-            } footer: {
-                Text("Files that are already indented keep their own style.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-
-            Section("Editor") {
-                Toggle("Show line numbers", isOn: $settings.showsLineNumbers)
-                Toggle("Show indent guides", isOn: $settings.showsIndentGuides)
-                Toggle("Show minimap", isOn: $settings.showsMinimap)
-                Toggle("Wrap long lines", isOn: $settings.wrapsLines)
-            }
-
-            Section("Window") {
-                Picker("Appearance", selection: $settings.appearance) {
-                    Text("System").tag(EditorSettings.Appearance.system)
-                    Text("Light").tag(EditorSettings.Appearance.light)
-                    Text("Dark").tag(EditorSettings.Appearance.dark)
-                }
-                .pickerStyle(.segmented)
-                Toggle("Reopen a project’s tabs where you left them", isOn: $settings.restoresTabs)
             }
         }
-        .formStyle(.grouped)
-        .scrollDisabled(true)
-        .frame(width: 480)
-        .fixedSize(horizontal: false, vertical: true)
     }
 
     private var sample: String {
@@ -134,5 +262,35 @@ private struct GeneralSettingsView: View {
             get: { settings.fontSize },
             set: { settings.setFontSize($0) }
         )
+    }
+}
+
+/// What the editor shows beside the text, and indentation for new files.
+private struct EditorSettingsPane: View {
+    @Bindable private var settings = EditorSettings.shared
+
+    var body: some View {
+        SettingsForm {
+            SettingsGroup("Display") {
+                SettingsToggle("Show line numbers", isOn: $settings.showsLineNumbers)
+                SettingsToggle("Show indent guides", isOn: $settings.showsIndentGuides)
+                SettingsToggle("Show minimap", isOn: $settings.showsMinimap)
+                SettingsToggle("Wrap long lines", isOn: $settings.wrapsLines)
+            }
+
+            SettingsGroup("Indentation") {
+                SettingsPicker("Tab width", selection: $settings.tabWidth) {
+                    ForEach(EditorSettings.tabWidths, id: \.self) { width in
+                        Text("\(width) spaces").tag(width)
+                    }
+                }
+                SettingsPicker("Indent new files with", selection: $settings.indentsWithTabs) {
+                    Text("Spaces").tag(false)
+                    Text("Tabs").tag(true)
+                }
+            } footer: {
+                Text("Files that are already indented keep their own style.")
+            }
+        }
     }
 }

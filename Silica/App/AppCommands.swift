@@ -2,7 +2,6 @@ import SwiftUI
 
 struct AppCommands: Commands {
     @Environment(\.openWindow) private var openWindow
-    @Environment(\.openSettings) private var openSettings
     /// The project in the key window. Tracked from AppKit key-window changes, since
     /// `focusedSceneValue` came back nil while the editor's NSTextView had focus.
     @ObservedObject private var keyWorkspace = KeyWorkspace.shared
@@ -19,9 +18,16 @@ struct AppCommands: Commands {
         // About lives in Settings, next to the open-source licenses.
         CommandGroup(replacing: .appInfo) {
             Button("About Silica") {
-                UserDefaults.standard.set(SettingsView.Tab.about.rawValue, forKey: SettingsView.tabKey)
-                openSettings()
+                UserDefaults.standard.set(SettingsView.Pane.about.rawValue, forKey: SettingsView.paneKey)
+                openWindow(id: WindowID.settings)
             }
+        }
+
+        // Settings is a regular Window scene (so it can resize), which doesn't get
+        // the Settings… item on its own.
+        CommandGroup(replacing: .appSettings) {
+            Button("Settings…") { openWindow(id: WindowID.settings) }
+                .keyboardShortcut(",")
         }
 
         CommandGroup(replacing: .newItem) {

@@ -3,6 +3,7 @@ import SwiftUI
 enum WindowID {
     static let welcome = "welcome"
     static let workspace = "workspace"
+    static let settings = "settings"
 }
 
 @main
@@ -41,8 +42,17 @@ struct SilicaApp: App {
             AppCommands()
         }
 
-        Settings {
+        // A regular window rather than a Settings scene: SwiftUI keeps Settings windows a
+        // fixed size. AppCommands opens it from ⌘, and About Silica.
+        Window("Settings", id: WindowID.settings) {
             SettingsView()
+                .windowMinimizeBehavior(.disabled)
         }
+        .windowStyle(.hiddenTitleBar)
+        .windowBackgroundDragBehavior(.enabled)
+        .windowResizability(.contentMinSize)
+        .restorationBehavior(.disabled)
+        .handlesExternalEvents(matching: [])
+        .commandsRemoved()
     }
 }

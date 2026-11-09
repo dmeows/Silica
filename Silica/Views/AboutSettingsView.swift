@@ -7,8 +7,8 @@ struct AboutSettingsView: View {
     @State private var shownLicense: Acknowledgement?
 
     var body: some View {
-        Form {
-            Section {
+        SettingsForm {
+            SettingsGroup {
                 VStack(spacing: 6) {
                     Image(nsImage: NSApp.applicationIconImage)
                         .resizable()
@@ -28,27 +28,21 @@ struct AboutSettingsView: View {
                 .padding(.vertical, 8)
             }
 
-            Section {
+            SettingsGroup("Acknowledgements") {
                 ForEach(Acknowledgement.all) { acknowledgement in
-                    LabeledContent {
-                        Button("View License") { shownLicense = acknowledgement }
-                    } label: {
+                    SettingsRow {
                         Text(acknowledgement.name)
                         Text("\(acknowledgement.license) · \(acknowledgement.holder)")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    } control: {
+                        Button("View License") { shownLicense = acknowledgement }
                     }
                 }
-            } header: {
-                Text("Acknowledgements")
             } footer: {
                 Text("Silica’s Markdown preview is built on these open-source projects.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
             }
         }
-        .formStyle(.grouped)
-        .scrollDisabled(true)
-        .frame(width: 480)
-        .fixedSize(horizontal: false, vertical: true)
         .sheet(item: $shownLicense) { acknowledgement in
             LicenseSheet(acknowledgement: acknowledgement)
         }
