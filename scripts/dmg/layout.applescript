@@ -24,9 +24,9 @@ on run {volumeName}
 			set shows icon preview of viewOptions to false
 			set background picture of viewOptions to file ".background:background.tiff"
 
-			-- Finder on macOS 27 shows icons 45 points below the position they're set
-			-- to (and reports the position it shows), so these put the icon centers at
-			-- y = 185, on the background's arrow.
+			-- Finder on macOS 27 puts icons 45 points below the position a script sets,
+			-- and saves where they land, so these put the icon centers at y = 185, on
+			-- the background's arrow. Finder shows the saved positions on any macOS.
 			set position of item "Silica.app" to {170, 140}
 			set position of item "Applications" to {470, 140}
 			-- Below the window, for Finders set to show hidden files. make-dmg.sh adds

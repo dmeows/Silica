@@ -12,7 +12,7 @@ Get the latest DMG from [Releases](https://github.com/dqhieu/Silica/releases/lat
 open it and drag Silica to Applications. Silica checks for updates once a day and
 installs them for you; you can turn that off in Settings › General.
 
-Silica needs macOS 27 or later.
+Silica needs macOS 26 or later.
 
 ## Features
 
