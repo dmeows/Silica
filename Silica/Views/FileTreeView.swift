@@ -76,6 +76,10 @@ struct FileTreeView: View {
     /// above the field.
     private static let filterFieldClearance: CGFloat = 44
 
+    /// How far the list reaches left past the sidebar's edge, which moves the
+    /// selection highlight from 10pt to the card inset (6pt) from the window's edge.
+    static let listLeadingOutset: CGFloat = 4
+
     private var tree: some View {
         ScrollViewReader { proxy in
             List(selection: $workspace.selection) {
@@ -135,6 +139,9 @@ struct FileTreeView: View {
             // change. Pull the list up by most of it and clip, so rows start closer to
             // the title bar and scrolled rows still disappear at its bottom edge.
             .padding(.top, -WorkspaceLayout.sidebarListTopTrim)
+            // Its row inset is fixed too: widen the list to the left so the selection
+            // highlight starts at the card inset, leaving the chevrons room inside it.
+            .padding(.leading, -Self.listLeadingOutset)
             .clipped()
             // Quick Open reveals the file it opened; wait a turn so newly
             // expanded folders have rows to scroll to.
@@ -257,7 +264,17 @@ private struct FileNodeRow: View {
     let depth: Int
     let workspace: WorkspaceModel
 
-    private static let indentWidth: CGFloat = 14
+    /// The extra leading space for each nesting level.
+    static let indentWidth: CGFloat = 14
+    /// How far the top level moves left of the sidebar list's own row inset, so its
+    /// chevrons line up under the window's close button. The list itself already
+    /// sits `listLeadingOutset` further left.
+    static let firstLevelShift: CGFloat = 7 - FileTreeView.listLeadingOutset
+
+    /// The leading padding for a row at `depth`.
+    static func leadingPadding(depth: Int) -> CGFloat {
+        CGFloat(depth) * indentWidth - firstLevelShift
+    }
 
     private var isRenaming: Bool {
         workspace.treeEdit == .rename(node.url)
@@ -306,7 +323,7 @@ private struct FileNodeRow: View {
                     .help("Unsaved changes")
             }
         }
-        .padding(.leading, CGFloat(depth) * Self.indentWidth)
+        .padding(.leading, Self.leadingPadding(depth: depth))
         .tag(node.url)
         .contextMenu {
             if !node.isDirectory {
@@ -375,7 +392,7 @@ private struct NewItemRow: View {
                 }
             }
         }
-        .padding(.leading, CGFloat(depth) * 14)
+        .padding(.leading, FileNodeRow.leadingPadding(depth: depth))
     }
 }
 
