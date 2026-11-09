@@ -4,32 +4,105 @@ import Observation
 extension Notification.Name {
     static let editorFontSizeDidChange = Notification.Name("EditorFontSizeDidChange")
     static let editorWrapDidChange = Notification.Name("EditorWrapDidChange")
+    /// Font, tab width, line numbers or indent guides changed.
+    static let editorSettingsDidChange = Notification.Name("EditorSettingsDidChange")
 }
 
-/// App-wide editor preferences, saved in UserDefaults.
+/// App-wide editor preferences, saved in UserDefaults. Each value is stored only
+/// while it differs from its default.
 @Observable
 final class EditorSettings {
     static let shared = EditorSettings()
 
     static let defaultFontSize: CGFloat = 13
     static let fontSizeRange: ClosedRange<CGFloat> = 9...36
-    private static let fontSizeKey = "editorFontSize"
-    private static let wrapsLinesKey = "editorWrapsLines"
+    static let tabWidths = [2, 4, 8]
+
+    private enum Key {
+        static let fontSize = "editorFontSize"
+        static let fontFamily = "editorFontFamily"
+        static let wrapsLines = "editorWrapsLines"
+        static let tabWidth = "editorTabWidth"
+        static let indentsWithTabs = "editorIndentsWithTabs"
+        static let showsLineNumbers = "editorShowsLineNumbers"
+        static let showsIndentGuides = "editorShowsIndentGuides"
+        static let appearance = "appearance"
+        static let restoresTabs = "restoresOpenTabs"
+    }
 
     /// Font size of the editor text; the line-number gutter scales with it.
     private(set) var fontSize: CGFloat
+
+    /// A monospaced font family, or `nil` for the system's (SF Mono).
+    var fontFamily: String? {
+        didSet {
+            guard fontFamily != oldValue else { return }
+            store(fontFamily, Key.fontFamily, isDefault: fontFamily == nil)
+            NotificationCenter.default.post(name: .editorSettingsDidChange, object: self)
+        }
+    }
 
     /// Long lines wrap to the editor's width; off, they scroll sideways.
     var wrapsLines: Bool {
         didSet {
             guard wrapsLines != oldValue else { return }
-            // Stored only when off, so the default stays on.
-            if wrapsLines {
-                UserDefaults.standard.removeObject(forKey: Self.wrapsLinesKey)
-            } else {
-                UserDefaults.standard.set(false, forKey: Self.wrapsLinesKey)
-            }
+            store(wrapsLines, Key.wrapsLines, isDefault: wrapsLines)
             NotificationCenter.default.post(name: .editorWrapDidChange, object: self)
+        }
+    }
+
+    /// Columns a tab character advances, and the indent step for new files.
+    var tabWidth: Int {
+        didSet {
+            guard tabWidth != oldValue else { return }
+            store(tabWidth, Key.tabWidth, isDefault: tabWidth == 4)
+            NotificationCenter.default.post(name: .editorSettingsDidChange, object: self)
+        }
+    }
+
+    /// How files with no indentation yet are indented; others keep their own style.
+    var indentsWithTabs: Bool {
+        didSet {
+            guard indentsWithTabs != oldValue else { return }
+            store(indentsWithTabs, Key.indentsWithTabs, isDefault: !indentsWithTabs)
+            NotificationCenter.default.post(name: .editorSettingsDidChange, object: self)
+        }
+    }
+
+    var showsLineNumbers: Bool {
+        didSet {
+            guard showsLineNumbers != oldValue else { return }
+            store(showsLineNumbers, Key.showsLineNumbers, isDefault: showsLineNumbers)
+            NotificationCenter.default.post(name: .editorSettingsDidChange, object: self)
+        }
+    }
+
+    var showsIndentGuides: Bool {
+        didSet {
+            guard showsIndentGuides != oldValue else { return }
+            store(showsIndentGuides, Key.showsIndentGuides, isDefault: showsIndentGuides)
+            NotificationCenter.default.post(name: .editorSettingsDidChange, object: self)
+        }
+    }
+
+    enum Appearance: String, CaseIterable, Identifiable {
+        case system, light, dark
+        var id: Self { self }
+    }
+
+    var appearance: Appearance {
+        didSet {
+            guard appearance != oldValue else { return }
+            store(appearance.rawValue, Key.appearance, isDefault: appearance == .system)
+            applyAppearance()
+        }
+    }
+
+    /// Reopen a project's tabs where they were left.
+    var restoresTabs: Bool {
+        didSet {
+            guard restoresTabs != oldValue else { return }
+            store(restoresTabs, Key.restoresTabs, isDefault: restoresTabs)
         }
     }
 
@@ -38,29 +111,73 @@ final class EditorSettings {
     var isDefaultFontSize: Bool { fontSize == Self.defaultFontSize }
 
     private init() {
-        let stored = UserDefaults.standard.double(forKey: Self.fontSizeKey)
-        fontSize = stored > 0 ? Self.clamped(CGFloat(stored)) : Self.defaultFontSize
-        wrapsLines = UserDefaults.standard.object(forKey: Self.wrapsLinesKey) as? Bool ?? true
+        let defaults = UserDefaults.standard
+        let storedSize = defaults.double(forKey: Key.fontSize)
+        fontSize = storedSize > 0 ? Self.clamped(CGFloat(storedSize)) : Self.defaultFontSize
+        fontFamily = defaults.string(forKey: Key.fontFamily)
+        wrapsLines = defaults.object(forKey: Key.wrapsLines) as? Bool ?? true
+        let storedTabWidth = defaults.integer(forKey: Key.tabWidth)
+        tabWidth = Self.tabWidths.contains(storedTabWidth) ? storedTabWidth : 4
+        indentsWithTabs = defaults.bool(forKey: Key.indentsWithTabs)
+        showsLineNumbers = defaults.object(forKey: Key.showsLineNumbers) as? Bool ?? true
+        showsIndentGuides = defaults.object(forKey: Key.showsIndentGuides) as? Bool ?? true
+        appearance = defaults.string(forKey: Key.appearance).flatMap(Appearance.init(rawValue:)) ?? .system
+        restoresTabs = defaults.object(forKey: Key.restoresTabs) as? Bool ?? true
     }
+
+    private func store(_ value: Any?, _ key: String, isDefault: Bool) {
+        if isDefault || value == nil {
+            UserDefaults.standard.removeObject(forKey: key)
+        } else {
+            UserDefaults.standard.set(value, forKey: key)
+        }
+    }
+
+    // MARK: Font
 
     func increaseFontSize() { setFontSize(fontSize + 1) }
     func decreaseFontSize() { setFontSize(fontSize - 1) }
     func resetFontSize() { setFontSize(Self.defaultFontSize) }
 
-    private func setFontSize(_ size: CGFloat) {
+    func setFontSize(_ size: CGFloat) {
         let size = Self.clamped(size)
         guard size != fontSize else { return }
         fontSize = size
-        if size == Self.defaultFontSize {
-            UserDefaults.standard.removeObject(forKey: Self.fontSizeKey)
-        } else {
-            UserDefaults.standard.set(Double(size), forKey: Self.fontSizeKey)
-        }
+        store(Double(size), Key.fontSize, isDefault: size == Self.defaultFontSize)
         NotificationCenter.default.post(name: .editorFontSizeDidChange, object: self)
     }
 
     private static func clamped(_ size: CGFloat) -> CGFloat {
         min(max(size.rounded(), fontSizeRange.lowerBound), fontSizeRange.upperBound)
+    }
+
+    /// The editor font at `size`: the chosen family, or the system monospaced font.
+    func editorFont(ofSize size: CGFloat) -> NSFont {
+        if let fontFamily,
+           let font = NSFontManager.shared.font(withFamily: fontFamily, traits: [], weight: 5, size: size) {
+            return font
+        }
+        return .monospacedSystemFont(ofSize: size, weight: .regular)
+    }
+
+    /// Installed fixed-pitch font families, for the font picker.
+    static let monospacedFamilies: [String] = {
+        let names = NSFontManager.shared.availableFontNames(with: .fixedPitchFontMask) ?? []
+        let families = Set(names.compactMap { NSFont(name: $0, size: 12)?.familyName })
+            // Hidden system families start with a dot.
+            .filter { !$0.hasPrefix(".") }
+        return families.sorted { $0.localizedStandardCompare($1) == .orderedAscending }
+    }()
+
+    // MARK: Appearance
+
+    /// Light, dark, or following the system, for every window.
+    func applyAppearance() {
+        NSApp.appearance = switch appearance {
+        case .system: nil
+        case .light: NSAppearance(named: .aqua)
+        case .dark: NSAppearance(named: .darkAqua)
+        }
     }
 
     // MARK: Keyboard

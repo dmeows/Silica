@@ -144,6 +144,8 @@ final class MarkdownPreview: NSObject, WKNavigationDelegate, WKScriptMessageHand
 
     private static var css: String {
         let size = Int(EditorSettings.shared.fontSize) + 1
+        // Code in the editor's font, when one is chosen in Settings.
+        let codeFont = EditorSettings.shared.fontFamily.map { "\"\($0.replacingOccurrences(of: "\"", with: ""))\", " } ?? ""
         let link = SyntaxTheme.blue
         let tokens = tokenCSS
         return """
@@ -162,7 +164,7 @@ final class MarkdownPreview: NSObject, WKNavigationDelegate, WKScriptMessageHand
         p, ul, ol, blockquote, pre, table { margin: 0 0 1em; }
         a { color: \(hex(link.light)); text-decoration: none; }
         a:hover { text-decoration: underline; }
-        code, pre { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 0.88em; }
+        code, pre { font-family: \(codeFont)ui-monospace, "SF Mono", Menlo, monospace; font-size: 0.88em; }
         :not(pre) > code { padding: 0.15em 0.35em; border-radius: 4px; background: rgba(128, 128, 128, 0.14); }
         pre { padding: 12px 14px; border-radius: 8px; background: rgba(128, 128, 128, 0.10); overflow-x: auto; line-height: 1.45; }
         blockquote { margin-left: 0; padding: 0 1em; border-left: 3px solid rgba(128, 128, 128, 0.35); color: rgba(0, 0, 0, 0.6); }

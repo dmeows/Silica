@@ -22,12 +22,19 @@ final class WorkspaceModel {
     var treeEdit: TreeEdit?
     private(set) var isQuickOpenVisible = false
     let quickOpen: QuickOpenModel
-    private(set) var openTabs: [URL] = []
-    private(set) var activeTab: URL?
+    private(set) var openTabs: [URL] = [] {
+        didSet { scheduleSessionSave() }
+    }
+    private(set) var activeTab: URL? {
+        didSet { scheduleSessionSave() }
+    }
     private(set) var buffers: [URL: EditorBuffer] = [:]
 
     @ObservationIgnored private var isAccessingScope: Bool
     @ObservationIgnored private var watcher: ProjectWatcher?
+    @ObservationIgnored private var terminationObserver: NSObjectProtocol?
+    @ObservationIgnored private var isRestoringSession = false
+    @ObservationIgnored private var sessionSaveTask: Task<Void, Never>?
 
     var name: String { root.name }
 
@@ -59,9 +66,20 @@ final class WorkspaceModel {
         watcher = ProjectWatcher(url: rootURL) { [weak self] in
             self?.refresh()
         }
+        restoreSession()
+        terminationObserver = NotificationCenter.default.addObserver(
+            forName: NSApplication.willTerminateNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.saveSession() }
+        }
     }
 
     func close() {
+        saveSession()
+        if let terminationObserver {
+            NotificationCenter.default.removeObserver(terminationObserver)
+            self.terminationObserver = nil
+        }
         watcher?.stop()
         watcher = nil
         if isAccessingScope {
@@ -518,6 +536,72 @@ final class WorkspaceModel {
         alert.messageText = message
         alert.informativeText = info
         alert.runModal()
+    }
+
+    // MARK: Session
+
+    /// Reopens the tabs the project had last time, with their cursor and scroll
+    /// positions (unless turned off in Settings).
+    private func restoreSession() {
+        guard EditorSettings.shared.restoresTabs,
+              let session = ProjectSessionStore.session(for: rootURL) else { return }
+        isRestoringSession = true
+        defer { isRestoringSession = false }
+
+        isSidebarVisible = session.isSidebarVisible
+        for tab in session.tabs {
+            let url = sessionURL(for: tab.path)
+            var isDirectory: ObjCBool = false
+            guard !openTabs.contains(url),
+                  FileManager.default.fileExists(atPath: url.path(percentEncoded: false), isDirectory: &isDirectory),
+                  !isDirectory.boolValue else { continue }
+            let buffer = makeBuffer(for: url)
+            buffers[url] = buffer
+            openTabs.append(url)
+            buffer.textController?.restorePosition(cursor: tab.cursor, topLine: tab.topLine)
+        }
+        let active = session.activeTab.map(sessionURL(for:)).flatMap { openTabs.contains($0) ? $0 : nil } ?? openTabs.first
+        if let active {
+            activate(active)
+            reveal(active)
+        }
+    }
+
+    /// Remembers the open tabs; called on changes (batched), on close and on quit.
+    func saveSession() {
+        sessionSaveTask?.cancel()
+        sessionSaveTask = nil
+        let tabs = openTabs.map { url in
+            let controller = buffers[url]?.textController
+            return ProjectSession.Tab(
+                path: relativePath(of: url),
+                cursor: controller?.cursorLocation,
+                topLine: controller?.savedTopLine
+            )
+        }
+        let session = ProjectSession(
+            tabs: tabs,
+            activeTab: activeTab.map(relativePath(of:)),
+            isSidebarVisible: isSidebarVisible,
+            savedAt: .now
+        )
+        ProjectSessionStore.save(session, for: rootURL)
+    }
+
+    private func scheduleSessionSave() {
+        guard !isRestoringSession else { return }
+        sessionSaveTask?.cancel()
+        sessionSaveTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(1))
+            guard !Task.isCancelled else { return }
+            self?.saveSession()
+        }
+    }
+
+    /// A saved path: relative to the project, or absolute.
+    private func sessionURL(for path: String) -> URL {
+        let absolute = path.hasPrefix("/") ? path : rootURL.path(percentEncoded: false).trimmingTrailingSlash + "/" + path
+        return URL(filePath: absolute, directoryHint: .notDirectory)
     }
 
     // MARK: Saving

@@ -36,5 +36,9 @@ struct SilicaApp: App {
             TextEditingCommands()
             AppCommands()
         }
+
+        Settings {
+            SettingsView()
+        }
     }
 }

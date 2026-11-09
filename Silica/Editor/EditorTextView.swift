@@ -10,10 +10,10 @@ import AppKit
 /// so guides run through blank lines inside a block, including right after its opening
 /// line, but stop where the block ends.
 final class EditorTextView: NSTextView {
-    /// Columns a tab advances; the paragraph style sets tab stops to match.
-    static let tabWidth = 4
+    /// Columns a tab advances (a setting); the paragraph style sets tab stops to match.
+    static var tabWidth: Int { EditorSettings.shared.tabWidth }
 
-    var showsIndentGuides = true {
+    var showsIndentGuides = EditorSettings.shared.showsIndentGuides {
         didSet { needsDisplay = true }
     }
 
@@ -201,11 +201,16 @@ final class EditorTextView: NSTextView {
             lineStart = NSMaxRange(text.lineRange(for: NSRange(location: lineStart, length: 0)))
             lines += 1
         }
+        let settings = EditorSettings.shared
+        // Nothing indented yet (a new file): the style from Settings.
+        if tabLines == 0 && spaceLines == 0 {
+            return Indentation(usesTabs: settings.indentsWithTabs, width: settings.tabWidth)
+        }
         if tabLines > spaceLines {
             return Indentation(usesTabs: true, width: tabWidth)
         }
         let width = [2, 4, 8].max { steps[$0, default: 0] < steps[$1, default: 0] }
-            .flatMap { steps[$0, default: 0] > 0 ? $0 : nil } ?? 4
+            .flatMap { steps[$0, default: 0] > 0 ? $0 : nil } ?? settings.tabWidth
         return Indentation(usesTabs: false, width: width)
     }
 }

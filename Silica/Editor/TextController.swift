@@ -59,7 +59,7 @@ final class TextController: NSObject, NSTextViewDelegate {
         let ruler = LineNumberRulerView(textView: textView, scrollView: scrollView, editorFontSize: fontSize)
         scrollView.verticalRulerView = ruler
         scrollView.hasVerticalRuler = true
-        scrollView.rulersVisible = true
+        scrollView.rulersVisible = EditorSettings.shared.showsLineNumbers
         lineNumbers = ruler
 
         if let language {
@@ -75,6 +75,10 @@ final class TextController: NSObject, NSTextViewDelegate {
         NotificationCenter.default.addObserver(
             self, selector: #selector(applyWrapping),
             name: .editorWrapDidChange, object: nil
+        )
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(settingsDidChange),
+            name: .editorSettingsDidChange, object: nil
         )
         scrollView.contentView.postsBoundsChangedNotifications = true
         NotificationCenter.default.addObserver(
@@ -115,7 +119,8 @@ final class TextController: NSObject, NSTextViewDelegate {
     /// Wraps lines to the view's width, or lets them run on and scroll sideways.
     @objc private func applyWrapping() {
         // The gutter floats over the scrolling area, so it isn't counted out of contentSize.
-        let width = max(0, scrollView.contentSize.width - (lineNumbers?.ruleThickness ?? 0))
+        let gutter = scrollView.rulersVisible ? (lineNumbers?.ruleThickness ?? 0) : 0
+        let width = max(0, scrollView.contentSize.width - gutter)
         if EditorSettings.shared.wrapsLines {
             textView.isHorizontallyResizable = false
             textView.autoresizingMask = [.width]
@@ -145,8 +150,48 @@ final class TextController: NSObject, NSTextViewDelegate {
     /// The line-number gutter floats over the left edge of the scrolling area, so text
     /// scrolled sideways (wrapping off) would show through it; hide that strip.
     @objc private func updateGutterMask() {
-        let gutter = lineNumbers?.ruleThickness ?? 0
+        let gutter = scrollView.rulersVisible ? (lineNumbers?.ruleThickness ?? 0) : 0
         textView.maskOutGutter(startingAt: scrollView.contentView.bounds.minX + gutter)
+    }
+
+    // MARK: Restoring position
+
+    /// A top line to scroll to once the view is on screen (from a restored session).
+    private var pendingTopLine: Int?
+    /// The top line when the view last left the screen (another tab was shown).
+    private var lastTopLine: Int?
+
+    /// Puts back a saved cursor and scroll position; the scroll waits until the view
+    /// is shown.
+    func restorePosition(cursor: Int?, topLine: Int?) {
+        if let cursor {
+            let length = (textView.string as NSString).length
+            textView.setSelectedRange(NSRange(location: min(max(cursor, 0), length), length: 0))
+        }
+        pendingTopLine = topLine
+    }
+
+    /// Called when the editor appears in the card.
+    func didAppear() {
+        guard let line = pendingTopLine else { return }
+        pendingTopLine = nil
+        scroll(toLine: line)
+    }
+
+    /// Called just before another tab's editor replaces this one.
+    func willDisappear() {
+        lastTopLine = topVisibleLine()
+    }
+
+    /// The top line to save, whether or not the editor is on screen.
+    var savedTopLine: Int {
+        if let pendingTopLine { return pendingTopLine }
+        if scrollView.window == nil { return lastTopLine ?? 1 }
+        return topVisibleLine()
+    }
+
+    var cursorLocation: Int {
+        textView.selectedRange().location
     }
 
     // MARK: Navigation
@@ -198,7 +243,7 @@ final class TextController: NSObject, NSTextViewDelegate {
     }
 
     private static func font(ofSize size: CGFloat) -> NSFont {
-        .monospacedSystemFont(ofSize: size, weight: .regular)
+        EditorSettings.shared.editorFont(ofSize: size)
     }
 
     /// Line spacing, plus tab stops every `EditorTextView.tabWidth` columns of the
@@ -226,6 +271,21 @@ final class TextController: NSObject, NSTextViewDelegate {
         applyParagraphStyle(for: font)
         lineNumbers?.setEditorFontSize(size)
         textView.needsDisplay = true
+    }
+
+    /// Font family, tab width, line numbers or indent guides changed in Settings.
+    @objc private func settingsDidChange() {
+        let settings = EditorSettings.shared
+        fontSizeDidChange()
+        textView.showsIndentGuides = settings.showsIndentGuides
+        // A new tab width changes the width of tab indentation.
+        textView.redetectIndentation()
+        if scrollView.rulersVisible != settings.showsLineNumbers {
+            scrollView.rulersVisible = settings.showsLineNumbers
+            applyWrapping()
+        }
+        updateGutterMask()
+        scheduleStatusUpdate()
     }
 
     func textDidChange(_ notification: Notification) {
@@ -280,7 +340,9 @@ final class TextController: NSObject, NSTextViewDelegate {
     func topVisibleLine() -> Int {
         guard let layoutManager = textView.textLayoutManager,
               let contentManager = layoutManager.textContentManager else { return 1 }
-        let y = max(0, textView.visibleRect.minY - textView.textContainerOrigin.y)
+        // A point into the view, so pixel rounding at a line boundary doesn't pick the
+        // line above.
+        let y = max(0, textView.visibleRect.minY - textView.textContainerOrigin.y + 1)
         guard let fragment = layoutManager.textLayoutFragment(for: CGPoint(x: 0, y: y)) else { return 1 }
         let offset = contentManager.offset(from: layoutManager.documentRange.location, to: fragment.rangeInElement.location)
         let text = textView.string as NSString
@@ -314,7 +376,9 @@ final class TextController: NSObject, NSTextViewDelegate {
               let range = NSTextRange(location: layoutManager.documentRange.location, end: location) else { return }
         layoutManager.ensureLayout(for: range)
         if let fragment = layoutManager.textLayoutFragment(for: location) {
-            textView.scroll(NSPoint(x: 0, y: fragment.layoutFragmentFrame.minY))
+            // Fragment frames don't include the text container's inset; the view does.
+            // Matches `topVisibleLine()`, so saving and restoring doesn't drift.
+            textView.scroll(NSPoint(x: 0, y: fragment.layoutFragmentFrame.minY + textView.textContainerOrigin.y))
         }
     }
 }
@@ -332,18 +396,20 @@ struct TextViewHost: NSViewRepresentable {
     }
 
     final class HostView: NSView {
-        private weak var current: NSScrollView?
+        private weak var current: TextController?
 
         func show(_ controller: TextController) {
+            guard current !== controller else { return }
+            current?.willDisappear()
+            current?.scrollView.removeFromSuperview()
             let scrollView = controller.scrollView
-            guard current !== scrollView else { return }
-            current?.removeFromSuperview()
             scrollView.frame = bounds
             scrollView.autoresizingMask = [.width, .height]
             addSubview(scrollView)
-            current = scrollView
+            current = controller
             DispatchQueue.main.async { [weak self] in
                 self?.window?.makeFirstResponder(controller.textView)
+                controller.didAppear()
             }
         }
     }
