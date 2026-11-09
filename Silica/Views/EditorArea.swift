@@ -128,7 +128,7 @@ private struct EditorTab: View {
         }
         .padding(.leading, 10)
         .padding(.trailing, 6)
-        .padding(.vertical, 4)
+        .padding(.vertical, 6)
         .foregroundStyle(isActive ? .primary : .secondary)
         // Only the active tab sits on glass; `.identity` renders no effect.
         .glassEffect(isActive ? .regular : .identity, in: .rect(cornerRadius: 8, style: .continuous))

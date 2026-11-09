@@ -72,7 +72,7 @@ struct WorkspaceWindow: View {
 
 enum WorkspaceLayout {
     /// Height of the title bar row that holds the traffic lights and the tabs.
-    static let titleBarHeight: CGFloat = 32
+    static let titleBarHeight: CGFloat = 36
     /// Room for the traffic lights when the sidebar is hidden.
     static let trafficLightsWidth: CGFloat = 78
     /// Smallest corner radius of the editor card; corners near the window's are concentric with it.
