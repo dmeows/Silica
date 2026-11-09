@@ -13,8 +13,11 @@ struct AppCommands: Commands {
 
     var body: some Commands {
         CommandGroup(replacing: .newItem) {
-            Button("New File") { workspace?.beginNewItem(isDirectory: false) }
+            Button("New File") { workspace?.newUntitledFile() }
                 .keyboardShortcut("n")
+                .disabled(workspace == nil)
+
+            Button("New File in Project…") { workspace?.beginNewItem(isDirectory: false) }
                 .disabled(workspace == nil)
 
             Button("New Folder") { workspace?.beginNewItem(isDirectory: true) }
@@ -53,7 +56,7 @@ struct AppCommands: Commands {
         CommandGroup(replacing: .saveItem) {
             Button("Save") { workspace?.saveActive() }
                 .keyboardShortcut("s")
-                .disabled(workspace?.activeBuffer?.isDirty != true)
+                .disabled(workspace?.activeBuffer.map { $0.isDirty || $0.isUntitled } != true)
 
             Button("Save As…") { workspace?.saveActiveAs() }
                 .keyboardShortcut("s", modifiers: [.command, .shift])

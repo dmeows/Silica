@@ -43,7 +43,7 @@ final class WorkspaceModel {
     }
 
     var hasUnsavedChanges: Bool {
-        buffers.values.contains { $0.isDirty }
+        buffers.values.contains { $0.needsSaving }
     }
 
     init(rootURL: URL) {
@@ -57,7 +57,7 @@ final class WorkspaceModel {
         search.unsavedTexts = { [weak self] in
             guard let self else { return [:] }
             var texts: [URL: String] = [:]
-            for (url, buffer) in self.buffers where buffer.isDirty {
+            for (url, buffer) in self.buffers where buffer.isDirty && !buffer.isUntitled {
                 texts[url] = buffer.textController?.textView.string
             }
             return texts
@@ -292,10 +292,30 @@ final class WorkspaceModel {
 
     func activate(_ url: URL) {
         activeTab = url
+        // An untitled file has no row in the tree or place in Quick Open.
+        if url.isUntitled {
+            selection = nil
+            return
+        }
         quickOpen.noteOpened(url)
         if selection != url {
             selection = url
         }
+    }
+
+    /// New File (⌘N): an empty "Untitled-N" tab, saved somewhere only when asked.
+    func newUntitledFile() {
+        let taken = Set(openTabs.filter(\.isUntitled).map(\.lastPathComponent))
+        var number = 1
+        while taken.contains("Untitled-\(number)") { number += 1 }
+        let buffer = EditorBuffer(untitledName: "Untitled-\(number)")
+        buffers[buffer.url] = buffer
+        if let active = activeTab, let index = openTabs.firstIndex(of: active) {
+            openTabs.insert(buffer.url, at: index + 1)
+        } else {
+            openTabs.append(buffer.url)
+        }
+        activate(buffer.url)
     }
 
     func closeActiveTab() {
@@ -310,7 +330,7 @@ final class WorkspaceModel {
 
     func closeTab(_ url: URL) {
         guard let index = openTabs.firstIndex(of: url) else { return }
-        if let buffer = buffers[url], buffer.isDirty, !confirmDiscardOrSave(buffer) {
+        if let buffer = buffers[url], buffer.needsSaving, !confirmDiscardOrSave(buffer) {
             return
         }
 
@@ -455,9 +475,7 @@ final class WorkspaceModel {
     func saveActiveAs() {
         guard let buffer = activeBuffer, buffer.textController != nil,
               let window = NSApp.keyWindow ?? NSApp.mainWindow else { return }
-        let panel = NSSavePanel()
-        panel.directoryURL = buffer.url.deletingLastPathComponent()
-        panel.nameFieldStringValue = buffer.name
+        let panel = savePanel(for: buffer)
         panel.canCreateDirectories = true
         panel.beginSheetModal(for: window) { [weak self] response in
             guard response == .OK, let url = panel.url else { return }
@@ -465,19 +483,29 @@ final class WorkspaceModel {
         }
     }
 
-    /// The second half of Save As, once a destination is chosen.
-    func save(_ buffer: EditorBuffer, as url: URL) {
+    /// Starts in the file's folder, or the project for an untitled file.
+    private func savePanel(for buffer: EditorBuffer) -> NSSavePanel {
+        let panel = NSSavePanel()
+        panel.directoryURL = buffer.isUntitled ? rootURL : buffer.url.deletingLastPathComponent()
+        panel.nameFieldStringValue = buffer.name
+        panel.canCreateDirectories = true
+        return panel
+    }
+
+    /// The second half of Save As, once a destination is chosen. Returns `true` if
+    /// the file was written.
+    @discardableResult
+    func save(_ buffer: EditorBuffer, as url: URL) -> Bool {
         let destination = Self.normalized(url, isDirectory: false)
         let source = buffer.url
         guard destination != source else {
-            save(buffer)
-            return
+            return save(buffer)
         }
         do {
             try buffer.write(to: destination)
         } catch {
             NSAlert(error: error).runModal()
-            return
+            return false
         }
         // A tab already open on the destination now shows stale text; drop it.
         if buffers[destination] != nil {
@@ -494,6 +522,7 @@ final class WorkspaceModel {
         activate(destination)
         refresh()
         reveal(destination)
+        return true
     }
 
     /// Points tabs at their new location after a rename.
@@ -571,7 +600,8 @@ final class WorkspaceModel {
     func saveSession() {
         sessionSaveTask?.cancel()
         sessionSaveTask = nil
-        let tabs = openTabs.map { url in
+        // Untitled tabs have nothing on disk to reopen.
+        let tabs = openTabs.filter { !$0.isUntitled }.map { url in
             let controller = buffers[url]?.textController
             return ProjectSession.Tab(
                 path: relativePath(of: url),
@@ -581,7 +611,7 @@ final class WorkspaceModel {
         }
         let session = ProjectSession(
             tabs: tabs,
-            activeTab: activeTab.map(relativePath(of:)),
+            activeTab: activeTab.flatMap { $0.isUntitled ? nil : relativePath(of: $0) },
             isSidebarVisible: isSidebarVisible,
             savedAt: .now
         )
@@ -607,17 +637,30 @@ final class WorkspaceModel {
     // MARK: Saving
 
     func saveActive() {
-        if let buffer = activeBuffer { save(buffer) }
+        guard let buffer = activeBuffer else { return }
+        if buffer.isUntitled {
+            saveActiveAs()
+        } else {
+            save(buffer)
+        }
     }
 
+    /// Saves every edited file. Untitled ones are left for their own Save, since each
+    /// needs a name.
     func saveAll() {
-        for buffer in buffers.values where buffer.isDirty {
+        for buffer in buffers.values where buffer.isDirty && !buffer.isUntitled {
             save(buffer)
         }
     }
 
     @discardableResult
     private func save(_ buffer: EditorBuffer) -> Bool {
+        // Untitled: ask where, in a panel of its own (this runs inside other prompts).
+        if buffer.isUntitled {
+            let panel = savePanel(for: buffer)
+            guard panel.runModal() == .OK, let url = panel.url else { return false }
+            return save(buffer, as: url)
+        }
         if case .modified = buffer.diskChange(), !confirmOverwrite(buffer) {
             return false
         }
@@ -670,7 +713,7 @@ final class WorkspaceModel {
 
     /// Edited files, in tab order.
     var unsavedBuffers: [EditorBuffer] {
-        openTabs.compactMap { buffers[$0] }.filter(\.isDirty)
+        openTabs.compactMap { buffers[$0] }.filter(\.needsSaving)
     }
 
     /// Asks, in a sheet on `window`, whether to save edited files before the window
@@ -704,7 +747,7 @@ final class WorkspaceModel {
             switch response {
             case .alertFirstButtonReturn:
                 // Stop at the first file that fails to save (or whose save is cancelled).
-                let saved = unsaved.allSatisfy { !$0.isDirty || self.save($0) }
+                let saved = unsaved.allSatisfy { !$0.needsSaving || self.save($0) }
                 completion(saved)
             case .alertSecondButtonReturn:
                 completion(true)

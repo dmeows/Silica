@@ -19,6 +19,8 @@ final class EditorBuffer: Identifiable {
 
     private(set) var url: URL
     let content: Content
+    /// A new file (⌘N) that hasn't been saved anywhere yet; `url` is a placeholder.
+    let isUntitled: Bool
     private(set) var encoding: String.Encoding
 
     var isDirty = false
@@ -66,8 +68,28 @@ final class EditorBuffer: Identifiable {
     private static let maxFileSize: Int64 = 20 * 1024 * 1024
     private static let maxImageSize: Int64 = 200 * 1024 * 1024
 
+    /// An empty, untitled file, e.g. "Untitled-1".
+    init(untitledName name: String) {
+        url = URL.untitled(name)
+        isUntitled = true
+        isMarkdown = false
+        encoding = .utf8
+        let controller = TextController(text: "", language: nil)
+        content = .text(controller)
+        controller.buffer = self
+        controller.updateStatus()
+    }
+
+    /// Whether closing it should ask to save: edited files, and untitled ones with
+    /// any text (an empty untitled tab just closes).
+    var needsSaving: Bool {
+        if isUntitled { return !(textController?.textView.string.isEmpty ?? true) }
+        return isDirty
+    }
+
     init(url: URL) {
         self.url = url
+        isUntitled = false
         self.isMarkdown = SyntaxLanguage(url: url) == .markdown
 
         // From the file system, not URL's resource cache, which can be stale when a
@@ -215,7 +237,7 @@ final class EditorBuffer: Identifiable {
     }
 
     func save() throws {
-        guard let controller = textController else { return }
+        guard !isUntitled, let controller = textController else { return }
         guard let data = controller.textView.string.data(using: encoding) else {
             throw CocoaError(.fileWriteInapplicableStringEncoding, userInfo: [NSURLErrorKey: url])
         }
@@ -254,6 +276,7 @@ final class EditorBuffer: Identifiable {
     /// made by other apps. Returns `true` if the buffer can't follow the change itself
     /// (it isn't text) and should be opened again.
     func syncWithDisk() -> Bool {
+        guard !isUntitled else { return false }
         switch diskChange() {
         case .unchanged:
             if isMissingOnDisk { isMissingOnDisk = false }
@@ -371,4 +394,14 @@ final class EditorBuffer: Identifiable {
         guard raw != 0, let converted else { return nil }
         return (converted as String, String.Encoding(rawValue: raw))
     }
+}
+
+extension URL {
+    /// The placeholder location of an untitled file.
+    static func untitled(_ name: String) -> URL {
+        URL(string: "untitled:///" + (name.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? name))!
+    }
+
+    /// A placeholder for a file that hasn't been saved yet: there's nothing on disk.
+    var isUntitled: Bool { scheme == "untitled" }
 }

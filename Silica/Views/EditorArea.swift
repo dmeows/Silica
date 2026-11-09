@@ -138,9 +138,11 @@ private struct EditorTab: View {
         .contextMenu {
             Button("Close", action: close)
             Button("Close Others", action: closeOthers)
-            Divider()
-            Button("Show in Finder") { Finder.reveal(url) }
-            Button("Copy Path") { Finder.copyPath(url) }
+            if !url.isUntitled {
+                Divider()
+                Button("Show in Finder") { Finder.reveal(url) }
+                Button("Copy Path") { Finder.copyPath(url) }
+            }
         }
     }
 }
