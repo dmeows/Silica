@@ -17,7 +17,7 @@ final class EditorBuffer: Identifiable {
         case unreadable(String)
     }
 
-    let url: URL
+    private(set) var url: URL
     let content: Content
     private(set) var encoding: String.Encoding
 
@@ -29,8 +29,18 @@ final class EditorBuffer: Identifiable {
     /// changes it.
     @ObservationIgnored private var diskSnapshot: DiskSnapshot?
 
+    /// Where the cursor is, for the status bar.
+    struct CursorStatus: Equatable {
+        var line = 1
+        var column = 1
+        var selectedLength = 0
+    }
+
+    var cursor = CursorStatus()
+    var indentation = EditorTextView.Indentation(usesTabs: false, width: 4)
+
     /// Markdown files can switch between their source and a rendered preview.
-    let isMarkdown: Bool
+    private(set) var isMarkdown: Bool
     private(set) var isShowingPreview = false
     /// Created the first time the preview is shown, then kept with the tab.
     @ObservationIgnored private(set) var preview: MarkdownPreview?
@@ -105,6 +115,62 @@ final class EditorBuffer: Identifiable {
         let controller = TextController(text: text, language: SyntaxLanguage(url: url))
         content = .text(controller)
         controller.buffer = self
+        controller.updateStatus()
+    }
+
+    // MARK: Status
+
+    var language: SyntaxLanguage? { SyntaxLanguage(url: url) }
+
+    /// e.g. "UTF-8", for the status bar.
+    var encodingName: String {
+        switch encoding {
+        case .utf8: "UTF-8"
+        case .utf16, .utf16BigEndian, .utf16LittleEndian: "UTF-16"
+        case .ascii: "ASCII"
+        case .isoLatin1: "ISO Latin 1"
+        case .windowsCP1252: "Windows 1252"
+        case .macOSRoman: "Mac Roman"
+        case .shiftJIS: "Shift JIS"
+        default: String.localizedName(of: encoding)
+        }
+    }
+
+    /// "LF", "CRLF" or "CR".
+    var lineEndingName: String {
+        switch textController?.lineEnding {
+        case "\r\n": "CRLF"
+        case "\r": "CR"
+        default: "LF"
+        }
+    }
+
+    // MARK: Renaming
+
+    /// Follows a rename or move made in Silica: same text, edits and undo history,
+    /// new location (and language, if the extension changed).
+    func move(to newURL: URL) {
+        url = newURL
+        let newLanguage = SyntaxLanguage(url: newURL)
+        isMarkdown = newLanguage == .markdown
+        // The preview resolves images relative to the old place; make a new one when needed.
+        isShowingPreview = isShowingPreview && isMarkdown
+        preview = nil
+        if isShowingPreview, let controller = textController {
+            let preview = makePreview(for: controller)
+            self.preview = preview
+            preview.show(markdown: controller.textView.string, line: controller.topVisibleLine())
+        }
+        textController?.setLanguage(newLanguage)
+    }
+
+    /// Writes the text to another file (Save As), leaving this buffer as it is.
+    func write(to destination: URL) throws {
+        guard let controller = textController else { return }
+        guard let data = controller.textView.string.data(using: encoding) else {
+            throw CocoaError(.fileWriteInapplicableStringEncoding, userInfo: [NSURLErrorKey: destination])
+        }
+        try data.write(to: destination, options: .atomic)
     }
 
     // MARK: Markdown preview

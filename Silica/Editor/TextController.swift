@@ -22,10 +22,6 @@ final class TextController: NSObject, NSTextViewDelegate {
         textView.minSize = .zero
         textView.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: .greatestFiniteMagnitude)
         textView.isVerticallyResizable = true
-        textView.isHorizontallyResizable = false
-        textView.autoresizingMask = [.width]
-        textView.textContainer?.widthTracksTextView = true
-        textView.textContainer?.containerSize = NSSize(width: contentSize.width, height: .greatestFiniteMagnitude)
         scrollView.documentView = textView
 
         scrollView.drawsBackground = false
@@ -54,6 +50,8 @@ final class TextController: NSObject, NSTextViewDelegate {
         textView.textContainerInset = NSSize(width: 8, height: 12)
 
         textView.string = text
+        textView.language = language
+        textView.lineEnding = Self.lineEnding(of: text)
         applyParagraphStyle(for: textView.font!)
         textView.setSelectedRange(NSRange(location: 0, length: 0))
         textView.delegate = self
@@ -68,11 +66,135 @@ final class TextController: NSObject, NSTextViewDelegate {
             highlighter = SyntaxHighlighter(textView: textView, language: language)
             highlighter?.highlightNow()
         }
+        applyWrapping()
 
         NotificationCenter.default.addObserver(
             self, selector: #selector(fontSizeDidChange),
             name: .editorFontSizeDidChange, object: nil
         )
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(applyWrapping),
+            name: .editorWrapDidChange, object: nil
+        )
+        scrollView.contentView.postsBoundsChangedNotifications = true
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(updateGutterMask),
+            name: NSView.boundsDidChangeNotification, object: scrollView.contentView
+        )
+    }
+
+    /// `\r\n` if the file's first line break is one, else `\n` (or `\r` for old Mac files).
+    private static func lineEnding(of text: String) -> String {
+        let string = text as NSString
+        let newline = string.range(of: "\n")
+        if newline.location != NSNotFound {
+            return newline.location > 0 && string.character(at: newline.location - 1) == 0x0D ? "\r\n" : "\n"
+        }
+        return string.range(of: "\r").location != NSNotFound ? "\r" : "\n"
+    }
+
+    var lineEnding: String { textView.lineEnding }
+
+    /// Switches highlighting and comment markers, e.g. after a rename changes the extension.
+    func setLanguage(_ language: SyntaxLanguage?) {
+        guard language != textView.language else { return }
+        textView.language = language
+        if let language {
+            highlighter = SyntaxHighlighter(textView: textView, language: language)
+            highlighter?.highlightNow()
+        } else {
+            highlighter = nil
+            if let storage = textView.textStorage {
+                storage.addAttribute(.foregroundColor, value: NSColor.labelColor, range: NSRange(location: 0, length: storage.length))
+            }
+        }
+    }
+
+    // MARK: Wrapping
+
+    /// Wraps lines to the view's width, or lets them run on and scroll sideways.
+    @objc private func applyWrapping() {
+        // The gutter floats over the scrolling area, so it isn't counted out of contentSize.
+        let width = max(0, scrollView.contentSize.width - (lineNumbers?.ruleThickness ?? 0))
+        if EditorSettings.shared.wrapsLines {
+            textView.isHorizontallyResizable = false
+            textView.autoresizingMask = [.width]
+            textView.textContainer?.widthTracksTextView = true
+            textView.frame.size.width = width
+            textView.textContainer?.containerSize = NSSize(width: width, height: .greatestFiniteMagnitude)
+            // Back to the left edge if the view had scrolled sideways. (The text view's
+            // own x = 0, which sits right of the gutter.)
+            textView.scroll(NSPoint(x: 0, y: textView.visibleRect.minY))
+        } else {
+            textView.textContainer?.widthTracksTextView = false
+            textView.textContainer?.containerSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: .greatestFiniteMagnitude)
+            textView.isHorizontallyResizable = true
+            textView.autoresizingMask = []
+        }
+        textView.sizeToFit()
+        textView.needsDisplay = true
+        lineNumbers?.setNeedsRedraw()
+        // Keep the cursor in view; the layout under it just changed.
+        if textView.window != nil {
+            DispatchQueue.main.async { [textView] in
+                textView.scrollRangeToVisible(textView.selectedRange())
+            }
+        }
+    }
+
+    /// The line-number gutter floats over the left edge of the scrolling area, so text
+    /// scrolled sideways (wrapping off) would show through it; hide that strip.
+    @objc private func updateGutterMask() {
+        let gutter = lineNumbers?.ruleThickness ?? 0
+        textView.maskOutGutter(startingAt: scrollView.contentView.bounds.minX + gutter)
+    }
+
+    // MARK: Navigation
+
+    /// Moves the cursor to the start of the 1-based `line`.
+    func goToLine(_ line: Int) {
+        guard let lineNumbers else { return }
+        textView.placeCursor(at: lineNumbers.offset(ofLine: line))
+        focus()
+    }
+
+    /// Selects `range` (a search match) and scrolls to it.
+    func reveal(_ range: NSRange) {
+        textView.reveal(range)
+        focus()
+    }
+
+    var lineCount: Int { lineNumbers?.lineCount ?? 1 }
+
+    private func focus() {
+        textView.window?.makeFirstResponder(textView)
+    }
+
+    // MARK: Status
+
+    private var isStatusUpdateScheduled = false
+
+    /// Coalesced, so a burst of edits or selection changes updates the status bar once.
+    private func scheduleStatusUpdate() {
+        guard !isStatusUpdateScheduled else { return }
+        isStatusUpdateScheduled = true
+        DispatchQueue.main.async { [weak self] in
+            self?.isStatusUpdateScheduled = false
+            self?.updateStatus()
+        }
+    }
+
+    func updateStatus() {
+        guard let buffer, let lineNumbers else { return }
+        let selection = textView.selectedRange()
+        let status = EditorBuffer.CursorStatus(
+            line: lineNumbers.lineNumber(at: selection.location),
+            column: textView.visualColumn(at: selection.location) + 1,
+            selectedLength: selection.length
+        )
+        if buffer.cursor != status { buffer.cursor = status }
+        let indentation = textView.indentation
+        if buffer.indentation != indentation { buffer.indentation = indentation }
     }
 
     private static func font(ofSize size: CGFloat) -> NSFont {
@@ -112,6 +234,7 @@ final class TextController: NSObject, NSTextViewDelegate {
         if !isReplacingText, buffer?.isDirty == false {
             buffer?.isDirty = true
         }
+        scheduleStatusUpdate()
     }
 
     private var isReplacingText = false
@@ -138,6 +261,7 @@ final class TextController: NSObject, NSTextViewDelegate {
 
         isReplacingText = true
         defer { isReplacingText = false }
+        textView.redetectIndentation()
         if textView.shouldChangeText(in: range, replacementString: replacement) {
             textView.replaceCharacters(in: range, with: replacement)
             textView.didChangeText()
@@ -147,6 +271,7 @@ final class TextController: NSObject, NSTextViewDelegate {
 
     func textViewDidChangeSelection(_ notification: Notification) {
         lineNumbers?.setNeedsRedraw()
+        scheduleStatusUpdate()
     }
 
     // MARK: Lines (shared with the Markdown preview)

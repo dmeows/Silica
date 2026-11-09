@@ -67,6 +67,29 @@ final class LineNumberRulerView: NSRulerView {
         needsDisplay = true
     }
 
+    /// The 1-based line containing the UTF-16 `offset`.
+    func lineNumber(at offset: Int) -> Int {
+        rebuildLineStartsIfNeeded()
+        var low = 0
+        var high = lineStarts.count - 1
+        while low < high {
+            let mid = (low + high + 1) / 2
+            if lineStarts[mid] <= offset { low = mid } else { high = mid - 1 }
+        }
+        return low + 1
+    }
+
+    /// Where the 1-based `line` starts, clamped to the last line.
+    func offset(ofLine line: Int) -> Int {
+        rebuildLineStartsIfNeeded()
+        return lineStarts[min(max(line, 1), lineStarts.count) - 1]
+    }
+
+    var lineCount: Int {
+        rebuildLineStartsIfNeeded()
+        return lineStarts.count
+    }
+
     @objc func setNeedsRedraw() {
         needsDisplay = true
     }

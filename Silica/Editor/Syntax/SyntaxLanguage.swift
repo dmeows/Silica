@@ -68,6 +68,66 @@ nonisolated enum SyntaxLanguage: String, Sendable, CaseIterable {
         }
     }
 
+    /// Shown in the status bar.
+    var displayName: String {
+        switch self {
+        case .swift: "Swift"
+        case .javascript: "JavaScript"
+        case .typescript: "TypeScript"
+        case .json: "JSON"
+        case .python: "Python"
+        case .ruby: "Ruby"
+        case .go: "Go"
+        case .rust: "Rust"
+        case .c: "C"
+        case .cpp: "C++"
+        case .objectiveC: "Objective-C"
+        case .java: "Java"
+        case .kotlin: "Kotlin"
+        case .csharp: "C#"
+        case .php: "PHP"
+        case .shell: "Shell"
+        case .yaml: "YAML"
+        case .toml: "TOML"
+        case .html: "HTML"
+        case .xml: "XML"
+        case .css: "CSS"
+        case .markdown: "Markdown"
+        case .sql: "SQL"
+        case .dockerfile: "Dockerfile"
+        case .makefile: "Makefile"
+        }
+    }
+
+    /// Starts a line comment, for Toggle Comment; `nil` where only block comments exist.
+    var lineComment: String? {
+        switch self {
+        case .swift, .javascript, .typescript, .json, .go, .rust, .c, .cpp, .objectiveC,
+             .java, .kotlin, .csharp, .php:
+            "//"
+        case .python, .ruby, .shell, .yaml, .toml, .dockerfile, .makefile:
+            "#"
+        case .sql:
+            "--"
+        case .html, .xml, .css, .markdown:
+            nil
+        }
+    }
+
+    /// Wraps a commented line in languages without line comments.
+    var blockComment: (open: String, close: String)? {
+        switch self {
+        case .css: ("/*", "*/")
+        case .html, .xml, .markdown: ("<!--", "-->")
+        default: nil
+        }
+    }
+
+    /// Lines ending with `:` open a block (Python's `def f():`, YAML mappings).
+    var opensBlockWithColon: Bool {
+        self == .python || self == .yaml
+    }
+
     var grammar: SyntaxGrammar {
         switch self {
         case .swift: Grammars.swift

@@ -13,6 +13,16 @@ struct AppCommands: Commands {
 
     var body: some Commands {
         CommandGroup(replacing: .newItem) {
+            Button("New File") { workspace?.beginNewItem(isDirectory: false) }
+                .keyboardShortcut("n")
+                .disabled(workspace == nil)
+
+            Button("New Folder") { workspace?.beginNewItem(isDirectory: true) }
+                .keyboardShortcut("n", modifiers: [.command, .option])
+                .disabled(workspace == nil)
+
+            Divider()
+
             Button("Open Project…") { opener.chooseAndOpen() }
                 .keyboardShortcut("o")
 
@@ -45,6 +55,10 @@ struct AppCommands: Commands {
                 .keyboardShortcut("s")
                 .disabled(workspace?.activeBuffer?.isDirty != true)
 
+            Button("Save As…") { workspace?.saveActiveAs() }
+                .keyboardShortcut("s", modifiers: [.command, .shift])
+                .disabled(workspace?.activeBuffer?.textController == nil)
+
             Button("Save All") { workspace?.saveAll() }
                 .keyboardShortcut("s", modifiers: [.command, .option])
                 .disabled(workspace?.hasUnsavedChanges != true)
@@ -63,6 +77,15 @@ struct AppCommands: Commands {
             .keyboardShortcut("s", modifiers: [.control, .command])
             .disabled(workspace == nil)
 
+            // ⇧⌘E, ⇧⌘F and ⇧⌘S are also handled by KeyWorkspace.installKeyboardShortcuts().
+            Button("Explorer") { workspace?.showExplorer() }
+                .keyboardShortcut("e", modifiers: [.command, .shift])
+                .disabled(workspace == nil)
+
+            Button("Find in Project") { workspace?.showSearch() }
+                .keyboardShortcut("f", modifiers: [.command, .shift])
+                .disabled(workspace == nil)
+
             Button("Refresh Explorer") { workspace?.refresh() }
                 .keyboardShortcut("r", modifiers: [.command, .shift])
                 .disabled(workspace == nil)
@@ -80,6 +103,14 @@ struct AppCommands: Commands {
         CommandGroup(after: .sidebar) {
             Divider()
 
+            Toggle("Word Wrap", isOn: Binding(
+                get: { settings.wrapsLines },
+                set: { settings.wrapsLines = $0 }
+            ))
+            .keyboardShortcut("z", modifiers: .option)
+
+            Divider()
+
             // ⌘= also zooms in; see EditorSettings.installKeyboardShortcuts().
             Button("Increase Font Size") { settings.increaseFontSize() }
                 .keyboardShortcut("+")
@@ -93,5 +124,33 @@ struct AppCommands: Commands {
                 .keyboardShortcut("0")
                 .disabled(settings.isDefaultFontSize)
         }
+
+        CommandMenu("Editor") {
+            let hasText = workspace?.activeBuffer?.textController != nil
+
+            Button("Go to Line…") { workspace?.showGoToLine() }
+                .keyboardShortcut("l")
+                .disabled(!hasText)
+
+            Divider()
+
+            editorAction("Toggle Comment", #selector(EditorTextView.toggleComment(_:)), key: "/", modifiers: .command)
+            editorAction("Indent", #selector(EditorTextView.indentLines(_:)), key: "]", modifiers: .command)
+            editorAction("Outdent", #selector(EditorTextView.outdentLines(_:)), key: "[", modifiers: .command)
+
+            Divider()
+
+            editorAction("Move Line Up", #selector(EditorTextView.moveLinesUp(_:)), key: .upArrow, modifiers: .option)
+            editorAction("Move Line Down", #selector(EditorTextView.moveLinesDown(_:)), key: .downArrow, modifiers: .option)
+            editorAction("Duplicate Line Up", #selector(EditorTextView.duplicateLinesUp(_:)), key: .upArrow, modifiers: [.option, .shift])
+            editorAction("Duplicate Line Down", #selector(EditorTextView.duplicateLinesDown(_:)), key: .downArrow, modifiers: [.option, .shift])
+        }
+    }
+
+    /// A menu item that sends `action` to the focused editor through the responder chain.
+    private func editorAction(_ title: String, _ action: Selector, key: KeyEquivalent, modifiers: EventModifiers) -> some View {
+        Button(title) { NSApp.sendAction(action, to: nil, from: nil) }
+            .keyboardShortcut(key, modifiers: modifiers)
+            .disabled(workspace?.activeBuffer?.textController == nil)
     }
 }

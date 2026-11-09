@@ -17,12 +17,38 @@ final class EditorTextView: NSTextView {
         didSet { needsDisplay = true }
     }
 
-    /// Columns per indentation level, detected from the text (2, 4 or 8, or the tab width).
-    private var cachedIndentUnit: Int?
+    /// How the file indents, detected from the text when it opens or reloads.
+    struct Indentation: Equatable {
+        var usesTabs: Bool
+        /// Columns per level: 2, 4 or 8, or the tab width for tabs.
+        var width: Int
+
+        /// The text one level of indentation inserts.
+        var unitString: String { usesTabs ? "\t" : String(repeating: " ", count: width) }
+    }
+
+    /// The language being edited, for comment markers and block-opening `:`.
+    var language: SyntaxLanguage?
+    /// Inserted by Return; matches the file (`\n` or `\r\n`).
+    var lineEnding = "\n"
+
+    private var cachedIndentation: Indentation?
+
+    var indentation: Indentation {
+        if let cachedIndentation { return cachedIndentation }
+        let detected = Self.detectIndentation(in: (textStorage?.string ?? "") as NSString)
+        cachedIndentation = detected
+        return detected
+    }
+
+    /// Detects the indentation again; it's otherwise kept from when the file opened,
+    /// as in VS Code, so editing doesn't flip it.
+    func redetectIndentation() {
+        cachedIndentation = nil
+    }
 
     override func didChangeText() {
         super.didChangeText()
-        cachedIndentUnit = nil
         // Guides follow the text, so any edit can move them.
         setNeedsDisplay(visibleRect)
     }
@@ -34,6 +60,31 @@ final class EditorTextView: NSTextView {
         }
     }
 
+    // MARK: Gutter mask
+
+    private var gutterMask: CALayer?
+
+    /// Hides everything left of `minX` (in this view's coordinates): the part of the
+    /// text under the line-number gutter when scrolled sideways.
+    func maskOutGutter(startingAt minX: CGFloat) {
+        guard let layer else { return }
+        guard minX > 0 else {
+            if layer.mask != nil { layer.mask = nil }
+            return
+        }
+        let mask = gutterMask ?? {
+            let mask = CALayer()
+            mask.backgroundColor = NSColor.black.cgColor
+            gutterMask = mask
+            return mask
+        }()
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        mask.frame = CGRect(x: minX, y: 0, width: max(0, bounds.width - minX), height: bounds.height)
+        CATransaction.commit()
+        if layer.mask !== mask { layer.mask = mask }
+    }
+
     // MARK: Drawing
 
     private func drawIndentGuides(in dirtyRect: NSRect) {
@@ -43,7 +94,7 @@ final class EditorTextView: NSTextView {
               let font else { return }
 
         let text = storage.string as NSString
-        let unit = indentUnit(in: text)
+        let unit = indentation.width
         let charWidth = (" " as NSString).size(withAttributes: [.font: font]).width
         let origin = textContainerOrigin
         let baseX = origin.x + (textContainer?.lineFragmentPadding ?? 0)
@@ -130,10 +181,9 @@ final class EditorTextView: NSTextView {
         return nil
     }
 
-    /// Picks the indentation step from the first lines: tabs if most indented lines
-    /// start with a tab, otherwise the most common increase between lines (2, 4 or 8).
-    private func indentUnit(in text: NSString) -> Int {
-        if let cachedIndentUnit { return cachedIndentUnit }
+    /// Picks the indentation from the first lines: tabs if most indented lines start
+    /// with a tab, otherwise spaces with the most common step between lines (2, 4 or 8).
+    private static func detectIndentation(in text: NSString) -> Indentation {
         var tabLines = 0
         var spaceLines = 0
         var steps: [Int: Int] = [:]
@@ -151,14 +201,11 @@ final class EditorTextView: NSTextView {
             lineStart = NSMaxRange(text.lineRange(for: NSRange(location: lineStart, length: 0)))
             lines += 1
         }
-        let unit: Int
         if tabLines > spaceLines {
-            unit = Self.tabWidth
-        } else {
-            unit = [2, 4, 8].max { steps[$0, default: 0] < steps[$1, default: 0] }
-                .flatMap { steps[$0, default: 0] > 0 ? $0 : nil } ?? 4
+            return Indentation(usesTabs: true, width: tabWidth)
         }
-        cachedIndentUnit = unit
-        return unit
+        let width = [2, 4, 8].max { steps[$0, default: 0] < steps[$1, default: 0] }
+            .flatMap { steps[$0, default: 0] > 0 ? $0 : nil } ?? 4
+        return Indentation(usesTabs: false, width: width)
     }
 }

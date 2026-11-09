@@ -33,7 +33,7 @@ struct EditorArea: View {
         let shape = ConcentricRectangle(corners: .concentric(minimum: .fixed(WorkspaceLayout.cardCornerRadius)))
         return Group {
             if let buffer = workspace.activeBuffer {
-                BufferView(buffer: buffer)
+                BufferView(buffer: buffer, workspace: workspace)
             } else {
                 EmptyEditorView(workspace: workspace)
             }
@@ -149,6 +149,7 @@ private struct EditorTab: View {
 
 private struct BufferView: View {
     let buffer: EditorBuffer
+    let workspace: WorkspaceModel
 
     var body: some View {
         switch buffer.content {
@@ -156,7 +157,10 @@ private struct BufferView: View {
             if buffer.isShowingPreview, let preview = buffer.preview {
                 MarkdownPreviewHost(preview: preview)
             } else {
-                TextViewHost(controller: controller)
+                VStack(spacing: 0) {
+                    TextViewHost(controller: controller)
+                    StatusBar(buffer: buffer, workspace: workspace)
+                }
             }
         case .image(let file):
             ImagePreview(file: file)
@@ -179,6 +183,42 @@ private struct BufferView: View {
                 description: Text(message)
             )
         }
+    }
+}
+
+// MARK: - Status bar
+
+/// Cursor position, indentation, encoding, line endings and language, along the
+/// bottom of the editor card.
+private struct StatusBar: View {
+    let buffer: EditorBuffer
+    let workspace: WorkspaceModel
+
+    var body: some View {
+        HStack(spacing: 16) {
+            Spacer(minLength: 0)
+            Button(action: workspace.showGoToLine) {
+                Text(position)
+            }
+            .buttonStyle(.plain)
+            .help("Go to Line (⌘L)")
+            Text(buffer.indentation.usesTabs ? "Tabs" : "Spaces: \(buffer.indentation.width)")
+            Text(buffer.encodingName)
+            Text(buffer.lineEndingName)
+            Text(buffer.language?.displayName ?? "Plain Text")
+        }
+        .font(.caption)
+        .monospacedDigit()
+        .foregroundStyle(.secondary)
+        .lineLimit(1)
+        .padding(.horizontal, 14)
+        .frame(height: 24)
+    }
+
+    private var position: String {
+        let cursor = buffer.cursor
+        let base = "Ln \(cursor.line), Col \(cursor.column)"
+        return cursor.selectedLength > 0 ? base + " (\(cursor.selectedLength) selected)" : base
     }
 }
 

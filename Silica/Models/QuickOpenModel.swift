@@ -42,12 +42,26 @@ final class QuickOpenModel {
         results.indices.contains(selectedIndex) ? results[selectedIndex] : nil
     }
 
-    /// Clears the query and rescans the project; the previous index is shown meanwhile.
-    func prepareForPresentation(activeFile: URL?) {
-        query = ""
+    /// Sets the query (usually empty, ":" for Go to Line) and rescans the project;
+    /// the previous index is shown meanwhile.
+    func prepareForPresentation(activeFile: URL?, query: String = "") {
+        self.activeFile = activeFile
+        self.query = query
+        presentationCount += 1
         reindex(activeFile: activeFile)
-        updateResults(activeFile: activeFile)
     }
+
+    /// Follows renamed files in the recent list.
+    func noteMoved(_ transform: (URL) -> URL?) {
+        recentFiles = recentFiles.map { transform($0) ?? $0 }
+    }
+
+    /// From a trailing ":42" in the query: the line to go to.
+    private(set) var lineTarget: Int?
+    /// The query is only ":" and a number: Go to Line in the current file.
+    private(set) var isGoToLine = false
+    /// Bumped each time the panel is shown, to put the cursor after any prefilled text.
+    private(set) var presentationCount = 0
 
     func noteOpened(_ url: URL) {
         recentFiles.removeAll { $0 == url }
@@ -66,7 +80,20 @@ final class QuickOpenModel {
 
     private func updateResults(activeFile: URL? = nil) {
         if let activeFile { self.activeFile = activeFile }
-        let query = FuzzyMatcher.prepare(query)
+        var text = self.query
+        if let suffix = text.range(of: #":\d*$"#, options: .regularExpression) {
+            lineTarget = Int(text[suffix].dropFirst())
+            text = String(text[..<suffix.lowerBound])
+        } else {
+            lineTarget = nil
+        }
+        isGoToLine = text.isEmpty && self.query.hasPrefix(":")
+        guard !isGoToLine else {
+            results = []
+            selectedIndex = 0
+            return
+        }
+        let query = FuzzyMatcher.prepare(text)
 
         if query.isEmpty {
             results = defaultResults()

@@ -15,6 +15,11 @@ final class WorkspaceModel {
     private(set) var revealedURL: URL?
     private(set) var revealCount = 0
     var isSidebarVisible = true
+    /// What the sidebar shows: the file tree or Find in Project.
+    var sidebarMode: SidebarMode = .explorer
+    let search: ProjectSearchModel
+    /// A rename or new file/folder name being typed in the tree.
+    var treeEdit: TreeEdit?
     private(set) var isQuickOpenVisible = false
     let quickOpen: QuickOpenModel
     private(set) var openTabs: [URL] = []
@@ -39,8 +44,17 @@ final class WorkspaceModel {
         self.isAccessingScope = rootURL.startAccessingSecurityScopedResource()
         self.root = FileNode(root: rootURL)
         self.quickOpen = QuickOpenModel(rootURL: rootURL)
+        self.search = ProjectSearchModel(rootURL: rootURL)
         root.isExpanded = true
         root.loadChildrenIfNeeded()
+        search.unsavedTexts = { [weak self] in
+            guard let self else { return [:] }
+            var texts: [URL: String] = [:]
+            for (url, buffer) in self.buffers where buffer.isDirty {
+                texts[url] = buffer.textController?.textView.string
+            }
+            return texts
+        }
         // Keep the tree and open files in step with changes made by other apps.
         watcher = ProjectWatcher(url: rootURL) { [weak self] in
             self?.refresh()
@@ -83,15 +97,72 @@ final class WorkspaceModel {
         withAnimation(.snappy) { isSidebarVisible.toggle() }
     }
 
+    // MARK: Sidebar modes
+
+    enum SidebarMode {
+        case explorer, search
+    }
+
+    func showExplorer() {
+        if !isSidebarVisible { toggleSidebar() }
+        sidebarMode = .explorer
+    }
+
+    /// Find in Project: shows the search sidebar and focuses its field.
+    func showSearch() {
+        if !isSidebarVisible { toggleSidebar() }
+        sidebarMode = .search
+        search.focusRequest += 1
+    }
+
+    /// Opens a search result with the match selected.
+    func openSearchMatch(_ url: URL, range: NSRange) {
+        open(url)
+        guard let buffer = buffers[url] else { return }
+        if buffer.isShowingPreview { buffer.setShowingPreview(false) }
+        // Once the editor for the file is in the window.
+        DispatchQueue.main.async {
+            buffer.textController?.reveal(range)
+        }
+    }
+
     // MARK: Quick Open
 
     func toggleQuickOpen() {
         if isQuickOpenVisible {
             hideQuickOpen()
         } else {
-            quickOpen.prepareForPresentation(activeFile: activeTab)
+            showQuickOpen(query: "")
+        }
+    }
+
+    /// Go to Line (⌘L): Quick Open with ":" typed, as in VS Code.
+    func showGoToLine() {
+        guard activeBuffer?.textController != nil else { return }
+        showQuickOpen(query: ":")
+    }
+
+    private func showQuickOpen(query: String) {
+        quickOpen.prepareForPresentation(activeFile: activeTab, query: query)
+        if !isQuickOpenVisible {
             withAnimation(.snappy(duration: 0.18)) { isQuickOpenVisible = true }
         }
+    }
+
+    /// Lines in the active file, for the Go to Line prompt.
+    var activeLineCount: Int? {
+        activeBuffer?.textController?.lineCount
+    }
+
+    func goToLineFromQuickOpen(_ line: Int) {
+        hideQuickOpen()
+        goToLine(line)
+    }
+
+    private func goToLine(_ line: Int) {
+        guard let buffer = activeBuffer, let controller = buffer.textController else { return }
+        if buffer.isShowingPreview { buffer.setShowingPreview(false) }
+        DispatchQueue.main.async { controller.goToLine(line) }
     }
 
     func hideQuickOpen() {
@@ -103,10 +174,12 @@ final class WorkspaceModel {
         }
     }
 
-    func openFromQuickOpen(_ url: URL) {
+    /// Opens a Quick Open result; "name:42" also jumps to line 42.
+    func openFromQuickOpen(_ url: URL, line: Int? = nil) {
         hideQuickOpen()
         open(url)
         reveal(url)
+        if let line { goToLine(line) }
     }
 
     /// Expands the folders above `url` so its row exists, selects it and asks the
@@ -139,6 +212,7 @@ final class WorkspaceModel {
     func refresh() {
         root.reload()
         syncOpenFilesWithDisk()
+        search.refresh()
     }
 
     private func syncOpenFilesWithDisk() {
@@ -233,6 +307,217 @@ final class WorkspaceModel {
                 activate(openTabs[min(index, openTabs.count - 1)])
             }
         }
+    }
+
+    // MARK: File operations
+
+    enum TreeEdit: Equatable {
+        case rename(URL)
+        case create(in: URL, isDirectory: Bool)
+    }
+
+    /// Starts naming a new file or folder in the tree: inside the selected folder,
+    /// next to the selected file, or at the top of the project.
+    func beginNewItem(isDirectory: Bool, in folder: URL? = nil) {
+        let target = folder ?? selection.map { $0.hasDirectoryPath ? $0 : $0.deletingLastPathComponent() } ?? rootURL
+        let node = node(for: target) ?? root
+        if !node.isExpanded { node.isExpanded = true }
+        showExplorer()
+        treeEdit = .create(in: node.url, isDirectory: isDirectory)
+    }
+
+    func beginRename(_ url: URL) {
+        showExplorer()
+        treeEdit = .rename(url)
+    }
+
+    func cancelTreeEdit() {
+        treeEdit = nil
+    }
+
+    /// Creates the file or folder named in the tree. A name with slashes creates the
+    /// folders in between, as in VS Code.
+    func createItem(named rawName: String, in folder: URL, isDirectory: Bool) {
+        treeEdit = nil
+        let name = rawName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty else { return }
+        let url = Self.normalized(folder.appending(path: name), isDirectory: isDirectory)
+        guard !FileManager.default.fileExists(atPath: url.path(percentEncoded: false)) else {
+            showAlert("“\(url.lastPathComponent)” already exists.", info: "Choose a different name.")
+            return
+        }
+        do {
+            let fileManager = FileManager.default
+            if isDirectory {
+                try fileManager.createDirectory(at: url, withIntermediateDirectories: true)
+            } else {
+                try fileManager.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+                try Data().write(to: url, options: .withoutOverwriting)
+            }
+        } catch {
+            NSAlert(error: error).runModal()
+            return
+        }
+        refresh()
+        reveal(url)
+        if !isDirectory { open(url) }
+    }
+
+    /// Renames in place; open tabs for the item (or anything inside a renamed folder)
+    /// follow it, keeping their edits.
+    func rename(_ url: URL, to rawName: String) {
+        treeEdit = nil
+        let name = rawName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty, name != url.lastPathComponent else { return }
+        guard !name.contains("/"), !name.contains(":") else {
+            showAlert("“\(name)” can’t be used as a name.", info: "Names can’t contain “/” or “:”.")
+            return
+        }
+        let isDirectory = url.hasDirectoryPath
+        let destination = Self.normalized(url.deletingLastPathComponent().appending(path: name), isDirectory: isDirectory)
+        // A case-only change is the same file on a case-insensitive disk.
+        let isCaseChange = name.lowercased() == url.lastPathComponent.lowercased()
+        guard isCaseChange || !FileManager.default.fileExists(atPath: destination.path(percentEncoded: false)) else {
+            showAlert("“\(name)” already exists.", info: "Choose a different name.")
+            return
+        }
+        do {
+            try FileManager.default.moveItem(at: url, to: destination)
+        } catch {
+            NSAlert(error: error).runModal()
+            return
+        }
+        retargetBuffers(from: url, to: destination)
+        refresh()
+        reveal(destination)
+    }
+
+    /// Copies the item next to itself as "name copy", like Finder.
+    func duplicate(_ url: URL) {
+        let isDirectory = url.hasDirectoryPath
+        let folder = url.deletingLastPathComponent()
+        let ext = isDirectory ? "" : url.pathExtension
+        let base = ext.isEmpty ? url.lastPathComponent : url.deletingPathExtension().lastPathComponent
+        var copy: URL
+        var number = 1
+        repeat {
+            let suffix = number == 1 ? " copy" : " copy \(number)"
+            let name = base + suffix + (ext.isEmpty ? "" : "." + ext)
+            copy = Self.normalized(folder.appending(path: name), isDirectory: isDirectory)
+            number += 1
+        } while FileManager.default.fileExists(atPath: copy.path(percentEncoded: false))
+        do {
+            try FileManager.default.copyItem(at: url, to: copy)
+        } catch {
+            NSAlert(error: error).runModal()
+            return
+        }
+        refresh()
+        reveal(copy)
+    }
+
+    /// Moves the item to the Trash. Unedited tabs for it close; edited ones stay
+    /// open, marked as deleted, so nothing typed is lost.
+    func moveToTrash(_ url: URL) {
+        do {
+            try FileManager.default.trashItem(at: url, resultingItemURL: nil)
+        } catch {
+            NSAlert(error: error).runModal()
+            return
+        }
+        for tab in openTabs where Self.url(tab, isInside: url) && buffers[tab]?.isDirty != true {
+            closeTab(tab)
+        }
+        if let selection, Self.url(selection, isInside: url) { self.selection = nil }
+        refresh()
+    }
+
+    /// Save As (⇧⌘S): writes the text to a new file, which takes the tab's place. The
+    /// original file keeps what was last saved.
+    func saveActiveAs() {
+        guard let buffer = activeBuffer, buffer.textController != nil,
+              let window = NSApp.keyWindow ?? NSApp.mainWindow else { return }
+        let panel = NSSavePanel()
+        panel.directoryURL = buffer.url.deletingLastPathComponent()
+        panel.nameFieldStringValue = buffer.name
+        panel.canCreateDirectories = true
+        panel.beginSheetModal(for: window) { [weak self] response in
+            guard response == .OK, let url = panel.url else { return }
+            self?.save(buffer, as: url)
+        }
+    }
+
+    /// The second half of Save As, once a destination is chosen.
+    func save(_ buffer: EditorBuffer, as url: URL) {
+        let destination = Self.normalized(url, isDirectory: false)
+        let source = buffer.url
+        guard destination != source else {
+            save(buffer)
+            return
+        }
+        do {
+            try buffer.write(to: destination)
+        } catch {
+            NSAlert(error: error).runModal()
+            return
+        }
+        // A tab already open on the destination now shows stale text; drop it.
+        if buffers[destination] != nil {
+            openTabs.removeAll { $0 == destination }
+            buffers[destination] = nil
+        }
+        buffers[source] = nil
+        buffers[destination] = makeBuffer(for: destination)
+        if let index = openTabs.firstIndex(of: source) {
+            openTabs[index] = destination
+        } else {
+            openTabs.append(destination)
+        }
+        activate(destination)
+        refresh()
+        reveal(destination)
+    }
+
+    /// Points tabs at their new location after a rename.
+    private func retargetBuffers(from old: URL, to new: URL) {
+        let oldPath = old.path(percentEncoded: false).trimmingTrailingSlash
+        let newPath = new.path(percentEncoded: false).trimmingTrailingSlash
+        func moved(_ url: URL) -> URL? {
+            let path = url.path(percentEncoded: false)
+            guard path == oldPath || path.hasPrefix(oldPath + "/") else { return nil }
+            return Self.normalized(URL(filePath: newPath + path.dropFirst(oldPath.count)), isDirectory: url.hasDirectoryPath)
+        }
+        for (url, buffer) in buffers {
+            guard let target = moved(url) else { continue }
+            buffers[url] = nil
+            buffers[target] = buffer
+            buffer.move(to: target)
+        }
+        openTabs = openTabs.map { moved($0) ?? $0 }
+        if let activeTab, let target = moved(activeTab) { self.activeTab = target }
+        if let selection, let target = moved(selection) { self.selection = target }
+        quickOpen.noteMoved { moved($0) }
+    }
+
+    /// The tree's form of a URL: a plain file path, with a trailing slash for folders.
+    private static func normalized(_ url: URL, isDirectory: Bool) -> URL {
+        // Not `standardizedFileURL`: it turns /private/tmp into /tmp, and the tree keeps
+        // paths as listed.
+        URL(filePath: url.path(percentEncoded: false).trimmingTrailingSlash,
+            directoryHint: isDirectory ? .isDirectory : .notDirectory)
+    }
+
+    private static func url(_ url: URL, isInside container: URL) -> Bool {
+        let path = url.path(percentEncoded: false).trimmingTrailingSlash
+        let containerPath = container.path(percentEncoded: false).trimmingTrailingSlash
+        return path == containerPath || path.hasPrefix(containerPath + "/")
+    }
+
+    private func showAlert(_ message: String, info: String) {
+        let alert = NSAlert()
+        alert.messageText = message
+        alert.informativeText = info
+        alert.runModal()
     }
 
     // MARK: Saving

@@ -23,6 +23,7 @@ private struct QuickOpenPanel: View {
     let workspace: WorkspaceModel
     @Bindable var model: QuickOpenModel
     @FocusState private var isSearchFocused: Bool
+    @State private var fieldSelection: TextSelection?
 
     private static let rowHeight: CGFloat = 30
     private static let maxListHeight: CGFloat = 400
@@ -35,7 +36,14 @@ private struct QuickOpenPanel: View {
         }
         .frame(maxWidth: 640)
         .glassEffect(.regular, in: .rect(cornerRadius: 16))
-        .onAppear { isSearchFocused = true }
+        .onAppear {
+            isSearchFocused = true
+            placeCursorAtEnd()
+        }
+        .onChange(of: model.presentationCount) { placeCursorAtEnd() }
+        .onChange(of: isSearchFocused) { _, focused in
+            if focused { placeCursorAtEnd() }
+        }
     }
 
     private var searchField: some View {
@@ -43,7 +51,7 @@ private struct QuickOpenPanel: View {
             Image(systemName: "magnifyingglass")
                 .font(.title3)
                 .foregroundStyle(.secondary)
-            TextField("Search files by name", text: $model.query)
+            TextField("Search files by name (add :line to jump)", text: $model.query, selection: $fieldSelection)
                 .textFieldStyle(.plain)
                 .font(.title3)
                 .focused($isSearchFocused)
@@ -71,7 +79,17 @@ private struct QuickOpenPanel: View {
 
     @ViewBuilder
     private var resultList: some View {
-        if model.results.isEmpty {
+        if model.isGoToLine {
+            HStack(spacing: 8) {
+                Image(systemName: "arrow.right.to.line")
+                    .foregroundStyle(.secondary)
+                    .frame(width: 16)
+                Text(goToLinePrompt)
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 14)
+            .frame(height: Self.rowHeight + 8)
+        } else if model.results.isEmpty {
             Text(model.isIndexing ? "Indexing files…" : "No matching files")
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity)
@@ -84,7 +102,7 @@ private struct QuickOpenPanel: View {
                             QuickOpenRow(result: result, isSelected: index == model.selectedIndex)
                                 .frame(height: Self.rowHeight)
                                 .contentShape(.rect)
-                                .onTapGesture { workspace.openFromQuickOpen(result.item.url) }
+                                .onTapGesture { workspace.openFromQuickOpen(result.item.url, line: model.lineTarget) }
                                 .id(result.id)
                         }
                     }
@@ -100,9 +118,41 @@ private struct QuickOpenPanel: View {
         }
     }
 
+    /// Puts the cursor after a prefilled ":" (Go to Line) instead of selecting it.
+    ///
+    /// Focusing a field selects all of its text, and focus can land after this runs,
+    /// so it's applied again once focus arrives and shortly after. It only ever undoes
+    /// a select-all, so it can't move a cursor the user has placed.
+    private func placeCursorAtEnd() {
+        for delay in [0, 0.05, 0.2] {
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+                guard !model.query.isEmpty else { return }
+                if let editor = NSApp.keyWindow?.firstResponder as? NSTextView,
+                   editor.string == model.query {
+                    let length = (editor.string as NSString).length
+                    guard editor.selectedRange() == NSRange(location: 0, length: length) else { return }
+                    editor.setSelectedRange(NSRange(location: length, length: 0))
+                }
+                fieldSelection = TextSelection(insertionPoint: model.query.endIndex)
+            }
+        }
+    }
+
+    private var goToLinePrompt: String {
+        let count = workspace.activeLineCount ?? 1
+        if let line = model.lineTarget {
+            return "Go to line \(min(max(line, 1), count))"
+        }
+        return "Type a line number between 1 and \(count)"
+    }
+
     private func openSelection() {
+        if model.isGoToLine {
+            if let line = model.lineTarget { workspace.goToLineFromQuickOpen(line) }
+            return
+        }
         guard let result = model.selectedResult else { return }
-        workspace.openFromQuickOpen(result.item.url)
+        workspace.openFromQuickOpen(result.item.url, line: model.lineTarget)
     }
 }
 
