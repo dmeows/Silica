@@ -99,6 +99,10 @@ struct AppCommands: Commands {
                 .keyboardShortcut("f", modifiers: [.command, .shift])
                 .disabled(workspace == nil)
 
+            Button("Filter Files") { workspace?.focusTreeFilter() }
+                .keyboardShortcut("j", modifiers: [.command, .option])
+                .disabled(workspace == nil)
+
             Button("Refresh Explorer") { workspace?.refresh() }
                 .keyboardShortcut("r", modifiers: [.command, .shift])
                 .disabled(workspace == nil)

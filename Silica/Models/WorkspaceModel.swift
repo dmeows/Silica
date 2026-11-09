@@ -20,6 +20,17 @@ final class WorkspaceModel {
     let search: ProjectSearchModel
     /// A rename or new file/folder name being typed in the tree.
     var treeEdit: TreeEdit?
+
+    /// Text in the explorer's filter field; the tree shows only matching names.
+    var treeFilter = "" {
+        didSet { if treeFilter != oldValue { scheduleTreeFilter() } }
+    }
+    /// Project-relative paths the filtered tree shows; `nil` when not filtering.
+    private(set) var treeFilterResult: TreeFilter.Result?
+    /// Bumped to put the cursor in the filter field (⌥⌘J).
+    var treeFilterFocusRequest = 0
+    @ObservationIgnored private var treeFilterItems: [QuickOpenItem]?
+    @ObservationIgnored private var treeFilterTask: Task<Void, Never>?
     private(set) var isQuickOpenVisible = false
     let quickOpen: QuickOpenModel
     private(set) var openTabs: [URL] = [] {
@@ -231,6 +242,58 @@ final class WorkspaceModel {
         root.reload()
         syncOpenFilesWithDisk()
         search.refresh()
+        // Files may have come or gone: filter a fresh list.
+        treeFilterItems = nil
+        if treeFilterResult != nil { scheduleTreeFilter(after: .milliseconds(300)) }
+    }
+
+    // MARK: Tree filter
+
+    var isFilteringTree: Bool {
+        !treeFilter.trimmingCharacters(in: .whitespaces).isEmpty
+    }
+
+    /// Filter Files (⌥⌘J): shows the explorer and focuses its filter field.
+    func focusTreeFilter() {
+        showExplorer()
+        treeFilterFocusRequest += 1
+    }
+
+    private func scheduleTreeFilter(after delay: Duration = .milliseconds(120)) {
+        treeFilterTask?.cancel()
+        let query = treeFilter.trimmingCharacters(in: .whitespaces)
+        guard !query.isEmpty else {
+            treeFilterResult = nil
+            return
+        }
+        let root = rootURL
+        let cached = treeFilterItems
+        treeFilterTask = Task { [weak self] in
+            try? await Task.sleep(for: delay)
+            guard !Task.isCancelled else { return }
+            let (items, result) = await Task.detached(priority: .userInitiated) {
+                let items = cached ?? ProjectFileIndex.scan(root: root)
+                return (items, TreeFilter.filter(items, by: query))
+            }.value
+            guard let self, !Task.isCancelled else { return }
+            self.treeFilterItems = items
+            self.loadFolders(in: result.visiblePaths)
+            self.treeFilterResult = result
+        }
+    }
+
+    /// Reads the folders a filtered tree passes through, without expanding them, so
+    /// clearing the filter brings back the tree as it was.
+    private func loadFolders(in paths: Set<String>) {
+        for path in paths.sorted(by: { $0.count < $1.count }) {
+            var current = root
+            for name in path.split(separator: "/") {
+                current.loadChildrenIfNeeded()
+                guard let next = current.children?.first(where: { $0.name == name }) else { break }
+                current = next
+            }
+            if current.isDirectory { current.loadChildrenIfNeeded() }
+        }
     }
 
     private func syncOpenFilesWithDisk() {

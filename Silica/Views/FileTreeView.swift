@@ -21,6 +21,8 @@ struct FileTreeView: View {
             switch workspace.sidebarMode {
             case .explorer:
                 tree
+                TreeFilterField(workspace: workspace)
+                    .padding(8)
             case .search:
                 ProjectSearchView(workspace: workspace, model: workspace.search)
             }
@@ -71,7 +73,7 @@ struct FileTreeView: View {
             List(selection: $workspace.selection) {
                 let rows = visibleRows()
                 if rows.isEmpty {
-                    Text("This project is empty")
+                    Text(workspace.isFilteringTree ? "No files match “\(workspace.treeFilter)”" : "This project is empty")
                         .foregroundStyle(.secondary)
                         .selectionDisabled()
                 } else {
@@ -157,20 +159,70 @@ struct FileTreeView: View {
             draftIsDirectory = isDirectory
         }
 
+        // While filtering: only matches and the folders above them, all open.
+        let filtered = workspace.isFilteringTree ? workspace.treeFilterResult?.visiblePaths : nil
+        if workspace.isFilteringTree && filtered == nil { return [] }
+
         func add(_ nodes: [FileNode], depth: Int, in folder: URL) {
             // A new item's name field goes first in its folder.
             if folder == draftFolder {
                 rows.append(TreeRow(kind: .draft(folder: folder, isDirectory: draftIsDirectory), depth: depth))
             }
             for node in nodes {
+                if let filtered, !filtered.contains(node.relativePath) { continue }
                 rows.append(TreeRow(kind: .node(node), depth: depth))
-                if node.isDirectory, node.isExpanded, let children = node.children {
+                let isOpen = filtered != nil || node.isExpanded
+                if node.isDirectory, isOpen, let children = node.children {
                     add(children, depth: depth + 1, in: node.url)
                 }
             }
         }
         add(workspace.root.children ?? [], depth: 0, in: workspace.root.url)
         return rows
+    }
+}
+
+// MARK: - Filter
+
+/// The filter field under the explorer tree: shows only files whose names contain
+/// the text, in their folders. ⌥⌘J focuses it; Escape clears it.
+private struct TreeFilterField: View {
+    @Bindable var workspace: WorkspaceModel
+    @FocusState private var isFocused: Bool
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "line.3.horizontal.decrease")
+                .foregroundStyle(workspace.isFilteringTree ? AnyShapeStyle(.tint) : AnyShapeStyle(.secondary))
+            TextField("Filter", text: $workspace.treeFilter)
+                .textFieldStyle(.plain)
+                .focused($isFocused)
+                .onKeyPress(.escape) {
+                    guard !workspace.treeFilter.isEmpty else { return .ignored }
+                    workspace.treeFilter = ""
+                    return .handled
+                }
+            if let result = workspace.treeFilterResult, workspace.isFilteringTree {
+                Text(result.matchCount.formatted())
+                    .font(.caption.monospacedDigit())
+                    .foregroundStyle(.secondary)
+                    .help(result.matchCount == 1 ? "1 matching file" : "\(result.matchCount.formatted()) matching files")
+            }
+            if !workspace.treeFilter.isEmpty {
+                Button {
+                    workspace.treeFilter = ""
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+                .help("Clear Filter")
+            }
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .glassEffect(.regular, in: .capsule)
+        .onChange(of: workspace.treeFilterFocusRequest) { isFocused = true }
     }
 }
 
@@ -187,18 +239,35 @@ private struct FileNodeRow: View {
         workspace.treeEdit == .rename(node.url)
     }
 
+    /// Drawn open: expanded, or shown with its matches while filtering.
+    private var isOpen: Bool {
+        node.isExpanded || workspace.isFilteringTree
+    }
+
+    /// The name, with the filter text in bold on a soft accent background.
+    private var highlightedName: AttributedString {
+        var name = AttributedString(node.name)
+        guard workspace.isFilteringTree,
+              let range = TreeFilter.matchRange(of: workspace.treeFilter.trimmingCharacters(in: .whitespaces), in: node.name),
+              let lower = AttributedString.Index(range.lowerBound, within: name),
+              let upper = AttributedString.Index(range.upperBound, within: name) else { return name }
+        name[lower..<upper].inlinePresentationIntent = .stronglyEmphasized
+        name[lower..<upper].backgroundColor = Color.accentColor.opacity(0.25)
+        return name
+    }
+
     var body: some View {
         HStack(spacing: 4) {
             disclosureChevron
             Group {
-                FileIcon(url: node.url, isDirectory: node.isDirectory, isExpanded: node.isExpanded)
+                FileIcon(url: node.url, isDirectory: node.isDirectory, isExpanded: isOpen)
                     .padding(.trailing, 2)
                 if isRenaming {
                     NameField(initialName: node.name, selectsExtension: node.isDirectory) { name in
                         if let name { workspace.rename(node.url, to: name) } else { workspace.cancelTreeEdit() }
                     }
                 } else {
-                    Text(node.name)
+                    Text(highlightedName)
                         .lineLimit(1)
                         .truncationMode(.middle)
                 }
@@ -249,11 +318,13 @@ private struct FileNodeRow: View {
                 Image(systemName: "chevron.right")
                     .font(.system(size: 8, weight: .bold))
                     .foregroundStyle(.secondary)
-                    .rotationEffect(.degrees(node.isExpanded ? 90 : 0))
+                    .rotationEffect(.degrees(isOpen ? 90 : 0))
                     .frame(width: 12, height: 16)
                     .contentShape(.rect)
             }
             .buttonStyle(.plain)
+            // The filter decides what's shown while it's on.
+            .disabled(workspace.isFilteringTree)
         } else {
             Color.clear.frame(width: 12, height: 16)
         }
