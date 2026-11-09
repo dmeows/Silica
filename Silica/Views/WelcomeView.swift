@@ -16,6 +16,9 @@ struct WelcomeView: View {
                 .padding(.vertical, 18)
                 .padding(.trailing, 18)
         }
+        // Up into the hidden title bar, so the recents card runs the window's full
+        // height and the hero centers on the whole window.
+        .ignoresSafeArea(.container, edges: .top)
         // Frosted, behind-window blur for the whole welcome window.
         .containerBackground(for: .window) {
             VisualEffectView()
@@ -38,16 +41,15 @@ struct WelcomeView: View {
         VStack(spacing: 0) {
             Spacer(minLength: 40)
 
-            Image(systemName: "chevron.left.forwardslash.chevron.right")
-                .font(.system(size: 44, weight: .semibold))
-                .foregroundStyle(.white)
-                .frame(width: 104, height: 104)
-                .glassEffect(.regular.tint(.accentColor.opacity(0.85)), in: .rect(cornerRadius: 28))
-                .shadow(color: .accentColor.opacity(0.35), radius: 20, y: 10)
+            // The app icon, which carries its own margin and shadow.
+            Image(nsImage: NSApp.applicationIconImage)
+                .resizable()
+                .interpolation(.high)
+                .frame(width: 128, height: 128)
 
             Text("Silica")
                 .font(.system(size: 30, weight: .bold))
-                .padding(.top, 22)
+                .padding(.top, 10)
 
             Text("Version \(Bundle.main.shortVersion)")
                 .font(.callout)
@@ -134,7 +136,9 @@ struct WelcomeView: View {
         }
         .padding(12)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .glassEffect(.regular, in: .rect(cornerRadius: 24))
+        // Corners next to the window's follow its radius minus the inset, like the
+        // workspace's editor card; the others fall back to the minimum.
+        .glassEffect(.regular, in: ConcentricRectangle(corners: .concentric(minimum: .fixed(WorkspaceLayout.cardCornerRadius))))
     }
 
     // MARK: Drop

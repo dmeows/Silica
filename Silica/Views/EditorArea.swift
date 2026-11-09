@@ -319,11 +319,11 @@ private struct EmptyEditorView: View {
 
     var body: some View {
         VStack(spacing: 24) {
-            Image(systemName: "chevron.left.forwardslash.chevron.right")
-                .font(.system(size: 40, weight: .semibold))
-                .foregroundStyle(.secondary)
-                .frame(width: 92, height: 92)
-                .glassEffect(.regular, in: .rect(cornerRadius: 24))
+            // The app icon, as on the welcome window; it carries its own margin.
+            Image(nsImage: NSApp.applicationIconImage)
+                .resizable()
+                .interpolation(.high)
+                .frame(width: 112, height: 112)
 
             VStack(spacing: 6) {
                 Text(workspace.name)
