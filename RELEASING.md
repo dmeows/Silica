@@ -44,17 +44,26 @@ update as soon as Pages redeploys. Run it from a clean, pushed `main`.
 
 6. **Sparkle signing key.** Updates are signed with the EdDSA key in your login
    keychain (the default `ed25519` account, which every Sparkle app you ship can
-   share). Its public half is `SUPublicEDKey` in `Config/Info.plist`. Back up the
-   private key somewhere safe; if it's lost, existing copies can never be updated
-   again:
+   share). Its public half is `SUPublicEDKey` in `Config/Info.plist`.
+
+   The private key is the one secret that matters most. Anyone who has it can sign
+   updates that every copy of Silica will install, and if it's lost, existing
+   copies can never be updated again. Back it up in a password manager. Export it
+   to your home folder, never into the repository, copy its contents into the
+   password manager, then delete the file:
 
    ```
-   build/SourcePackages/artifacts/sparkle/Sparkle/bin/generate_keys -x sparkle-private-key.txt
+   build/SourcePackages/artifacts/sparkle/Sparkle/bin/generate_keys -x ~/sparkle-private-key.txt
+   rm ~/sparkle-private-key.txt
    ```
 
-   (The tools are there after the first release build; before that, in
-   DerivedData under `SourcePackages/artifacts/sparkle/Sparkle/bin`.) Never
-   commit the exported file.
+   To set up another Mac for releases, save the key from the password manager to
+   a file outside the repository, import it with `generate_keys -f <file>`, and
+   delete the file.
+
+   The tools are there after the first release build; before that, they're in
+   DerivedData under `SourcePackages/artifacts/sparkle/Sparkle/bin`. `.gitignore`
+   also ignores files named like `*private-key*`, but don't rely on it.
 
 ## If a release stops partway
 

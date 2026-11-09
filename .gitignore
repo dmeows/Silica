@@ -24,6 +24,12 @@ DerivedData/
 .swiftpm/
 Packages/
 
+# Signing secrets: exported Sparkle keys, certificates, App Store Connect API keys.
+# These belong in the Keychain or a password manager, never in the repository.
+*private-key*
+*.p12
+*.p8
+
 # Editors
 .vscode/
 .idea/
