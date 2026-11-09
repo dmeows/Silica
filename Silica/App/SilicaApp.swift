@@ -25,6 +25,9 @@ struct SilicaApp: App {
         .windowBackgroundDragBehavior(.enabled)
         .defaultPosition(.center)
         .restorationBehavior(.disabled)
+        // Files and folders from Finder go to AppDelegate/ExternalOpener; without
+        // this, SwiftUI also brings up this window for each of them.
+        .handlesExternalEvents(matching: [])
 
         WindowGroup("Workspace", id: WindowID.workspace, for: RecentProject.ID.self) { $projectID in
             WorkspaceWindow(projectID: projectID)
@@ -32,6 +35,7 @@ struct SilicaApp: App {
         .defaultSize(width: 1180, height: 760)
         .windowStyle(.hiddenTitleBar)
         .windowBackgroundDragBehavior(.enabled)
+        .handlesExternalEvents(matching: [])
         .commands {
             TextEditingCommands()
             AppCommands()

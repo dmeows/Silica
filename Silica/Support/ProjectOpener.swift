@@ -7,16 +7,19 @@ struct ProjectOpener {
 
     private var store: RecentProjectsStore { .shared }
 
+    /// The Open panel: a folder opens as a project; files open in the project they
+    /// belong to (see `ExternalOpener`).
     func chooseAndOpen() {
         let panel = NSOpenPanel()
         panel.canChooseDirectories = true
-        panel.canChooseFiles = false
-        panel.allowsMultipleSelection = false
+        panel.canChooseFiles = true
+        panel.allowsMultipleSelection = true
         panel.canCreateDirectories = true
         panel.prompt = "Open"
-        panel.message = "Choose a project folder to open in Silica"
-        guard panel.runModal() == .OK, let url = panel.url else { return }
-        open(url: url)
+        panel.message = "Choose a project folder or files to open in Silica"
+        guard panel.runModal() == .OK else { return }
+        ExternalOpener.shared.openWindow = openWindow
+        ExternalOpener.shared.open(panel.urls)
     }
 
     func open(url: URL) {

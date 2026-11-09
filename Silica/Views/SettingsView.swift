@@ -1,8 +1,30 @@
 import SwiftUI
 
-/// Settings (⌘,): editor font and indentation, what the editor shows, appearance,
-/// and whether projects reopen their tabs. Changes apply to open editors at once.
+/// Settings (⌘,): a General tab for the editor and windows, and an About tab with
+/// the version and open-source licenses (also what Silica › About Silica shows).
 struct SettingsView: View {
+    enum Tab: String {
+        case general, about
+    }
+
+    @AppStorage(SettingsView.tabKey) private var tab: Tab = .general
+    static let tabKey = "settingsTab"
+
+    var body: some View {
+        TabView(selection: $tab) {
+            GeneralSettingsView()
+                .tabItem { Label("General", systemImage: "gearshape") }
+                .tag(Tab.general)
+            AboutSettingsView()
+                .tabItem { Label("About", systemImage: "info.circle") }
+                .tag(Tab.about)
+        }
+    }
+}
+
+/// Editor font and indentation, what the editor shows, appearance, and whether
+/// projects reopen their tabs. Changes apply to open editors at once.
+private struct GeneralSettingsView: View {
     @Bindable private var settings = EditorSettings.shared
 
     var body: some View {
@@ -68,6 +90,7 @@ struct SettingsView: View {
             }
         }
         .formStyle(.grouped)
+        .scrollDisabled(true)
         .frame(width: 480)
         .fixedSize(horizontal: false, vertical: true)
     }

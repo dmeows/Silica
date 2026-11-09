@@ -192,7 +192,7 @@ final class EditorBuffer: Identifiable {
         guard let data = controller.textView.string.data(using: encoding) else {
             throw CocoaError(.fileWriteInapplicableStringEncoding, userInfo: [NSURLErrorKey: destination])
         }
-        try data.write(to: destination, options: .atomic)
+        try data.write(to: destination.resolvingSymlinksInPath(), options: .atomic)
     }
 
     // MARK: Markdown preview
@@ -241,7 +241,9 @@ final class EditorBuffer: Identifiable {
         guard let data = controller.textView.string.data(using: encoding) else {
             throw CocoaError(.fileWriteInapplicableStringEncoding, userInfo: [NSURLErrorKey: url])
         }
-        try data.write(to: url, options: .atomic)
+        // Through a symlink to its target: an atomic write to the link itself would
+        // swap it for a regular file and leave the real file unchanged.
+        try data.write(to: url.resolvingSymlinksInPath(), options: .atomic)
         diskSnapshot = Self.attributes(of: url).map { DiskSnapshot(attributes: $0, digest: Self.digest(of: data)) }
         isDirty = false
         isMissingOnDisk = false
@@ -337,8 +339,11 @@ final class EditorBuffer: Identifiable {
         let size: Int?
     }
 
+    /// The file's own date and size; for a symlink, its target's, so edits made
+    /// through the link (or to the target directly) are noticed.
     private static func attributes(of url: URL) -> FileAttributes? {
-        guard let attributes = try? FileManager.default.attributesOfItem(atPath: url.path(percentEncoded: false)) else {
+        let path = url.resolvingSymlinksInPath().path(percentEncoded: false)
+        guard let attributes = try? FileManager.default.attributesOfItem(atPath: path) else {
             return nil
         }
         return FileAttributes(

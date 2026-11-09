@@ -34,6 +34,7 @@ struct WorkspaceWindow: View {
             }
         }
         .onAppear {
+            ExternalOpener.shared.openWindow = openWindow
             Self.openCount += 1
             dismissWindow(id: WindowID.welcome)
             load()
@@ -42,6 +43,7 @@ struct WorkspaceWindow: View {
             if let workspace, KeyWorkspace.shared.current === workspace {
                 KeyWorkspace.shared.current = nil
             }
+            if let workspace { ExternalOpener.shared.workspaceDidClose(workspace) }
             workspace?.close()
             Self.openCount -= 1
             if Self.openCount == 0 {
@@ -59,7 +61,9 @@ struct WorkspaceWindow: View {
         }
         do {
             let url = try RecentProjectsStore.shared.resolveURL(for: projectID)
-            workspace = WorkspaceModel(rootURL: url)
+            let workspace = WorkspaceModel(rootURL: url)
+            self.workspace = workspace
+            ExternalOpener.shared.workspaceDidOpen(workspace, projectID: projectID)
         } catch {
             errorMessage = error.localizedDescription
         }

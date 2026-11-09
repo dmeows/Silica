@@ -29,6 +29,7 @@ struct WelcomeView: View {
             }
         }
         .onDrop(of: [.fileURL], isTargeted: $isDropTargeted, perform: handleDrop)
+        .onAppear { ExternalOpener.shared.openWindow = openWindow }
     }
 
     // MARK: Hero
@@ -143,8 +144,8 @@ struct WelcomeView: View {
         _ = provider.loadObject(ofClass: URL.self) { url, _ in
             guard let url else { return }
             Task { @MainActor in
-                let isDirectory = (try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) ?? false
-                opener.open(url: isDirectory ? url : url.deletingLastPathComponent())
+                // A folder opens as a project; a file in the project it belongs to.
+                ExternalOpener.shared.open([url])
             }
         }
         return true

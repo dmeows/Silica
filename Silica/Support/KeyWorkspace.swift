@@ -81,6 +81,7 @@ struct KeyWindowTracker: NSViewRepresentable {
             super.viewDidMoveToWindow()
             NotificationCenter.default.removeObserver(self)
             guard let window else { return }
+            workspace?.window = window
             NotificationCenter.default.addObserver(
                 self, selector: #selector(windowDidBecomeKey),
                 name: NSWindow.didBecomeKeyNotification, object: window

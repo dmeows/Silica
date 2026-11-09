@@ -41,6 +41,8 @@ final class WorkspaceModel {
     }
     private(set) var buffers: [URL: EditorBuffer] = [:]
 
+    /// The project's window, to bring forward when a file is opened in it from outside.
+    @ObservationIgnored weak var window: NSWindow?
     @ObservationIgnored private var isAccessingScope: Bool
     @ObservationIgnored private var watcher: ProjectWatcher?
     @ObservationIgnored private var terminationObserver: NSObjectProtocol?

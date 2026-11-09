@@ -2,6 +2,7 @@ import SwiftUI
 
 struct AppCommands: Commands {
     @Environment(\.openWindow) private var openWindow
+    @Environment(\.openSettings) private var openSettings
     /// The project in the key window. Tracked from AppKit key-window changes, since
     /// `focusedSceneValue` came back nil while the editor's NSTextView had focus.
     @ObservedObject private var keyWorkspace = KeyWorkspace.shared
@@ -12,6 +13,14 @@ struct AppCommands: Commands {
     private var opener: ProjectOpener { ProjectOpener(openWindow: openWindow) }
 
     var body: some Commands {
+        // About lives in Settings, next to the open-source licenses.
+        CommandGroup(replacing: .appInfo) {
+            Button("About Silica") {
+                UserDefaults.standard.set(SettingsView.Tab.about.rawValue, forKey: SettingsView.tabKey)
+                openSettings()
+            }
+        }
+
         CommandGroup(replacing: .newItem) {
             Button("New File") { workspace?.newUntitledFile() }
                 .keyboardShortcut("n")
@@ -26,7 +35,7 @@ struct AppCommands: Commands {
 
             Divider()
 
-            Button("Open Project…") { opener.chooseAndOpen() }
+            Button("Open…") { opener.chooseAndOpen() }
                 .keyboardShortcut("o")
 
             Menu("Open Recent") {
