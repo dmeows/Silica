@@ -11,10 +11,19 @@ final class ExternalOpener {
     static let shared = ExternalOpener()
     private init() {}
 
-    /// SwiftUI's window opener, handed over by the windows as they appear: the app
-    /// delegate, where Finder's requests arrive, has no environment to read it from.
+    /// SwiftUI's window opener, handed over by the menu commands (which exist even
+    /// with no window open, as when Finder launches Silica with a file) and by the
+    /// windows: the app delegate, where Finder's requests arrive, has no environment
+    /// to read it from.
     var openWindow: OpenWindowAction? {
-        didSet { flush() }
+        // Later, as this can be set while SwiftUI is building the menus.
+        didSet { DispatchQueue.main.async { self.flush() } }
+    }
+
+    /// For the menu commands, whose body runs on every update: sets the opener
+    /// only the first time.
+    func provide(_ openWindow: OpenWindowAction) {
+        if self.openWindow == nil { self.openWindow = openWindow }
     }
 
     /// Requests that came in before any window could open others (at launch).

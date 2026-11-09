@@ -13,6 +13,9 @@ struct AppCommands: Commands {
     private var opener: ProjectOpener { ProjectOpener(openWindow: openWindow) }
 
     var body: some Commands {
+        // Lets Finder's open requests at launch open windows before any exists.
+        let _ = ExternalOpener.shared.provide(openWindow)
+
         // About lives in Settings, next to the open-source licenses.
         CommandGroup(replacing: .appInfo) {
             Button("About Silica") {
