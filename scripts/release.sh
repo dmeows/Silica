@@ -6,7 +6,8 @@
 #
 #   1. bumps MARKETING_VERSION to <version> and CURRENT_PROJECT_VERSION by one
 #   2. archives and exports the app signed with your Developer ID
-#   3. notarizes and staples the app, packs it in a DMG, notarizes and staples that
+#   3. notarizes and staples the app, packs it in a styled DMG (scripts/dmg),
+#      notarizes and staples that
 #   4. commits the version bump, tags v<version> and pushes both
 #   5. creates the GitHub release with the DMG attached
 #   6. adds the release to docs/appcast.xml (the Sparkle feed GitHub Pages serves)
@@ -63,6 +64,9 @@ SIGN_IDENTITY=$(security find-identity -v -p codesigning \
 
 xcrun notarytool history --keychain-profile "$NOTARY_PROFILE" >/dev/null 2>&1 \
     || die "no notarization credentials named $NOTARY_PROFILE; see RELEASING.md"
+
+# make-dmg.sh needs the name for the new DMG's volume.
+[[ ! -e /Volumes/Silica ]] || die "eject the volume named Silica first"
 
 # --- Version bump, undone if anything fails before it's committed --------------
 
@@ -127,10 +131,7 @@ xcrun stapler staple "$APP"
 
 step "Packing and notarizing the DMG"
 DMG=$WORK/Silica-$VERSION.dmg
-mkdir "$WORK/dmg"
-ditto "$APP" "$WORK/dmg/Silica.app"
-ln -s /Applications "$WORK/dmg/Applications"
-hdiutil create -quiet -volname Silica -srcfolder "$WORK/dmg" -fs HFS+ -format UDZO -ov "$DMG"
+scripts/dmg/make-dmg.sh "$APP" "$DMG"
 codesign --sign "$SIGN_IDENTITY" --timestamp "$DMG"
 xcrun notarytool submit "$DMG" --keychain-profile "$NOTARY_PROFILE" --wait
 xcrun stapler staple "$DMG"
