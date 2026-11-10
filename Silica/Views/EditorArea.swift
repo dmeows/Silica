@@ -123,6 +123,9 @@ private struct EditorTabBar: View {
             }
             .onChange(of: workspace.openTabs) { _, tabs in
                 tabWidths = tabWidths.filter { tabs.contains($0.key) }
+                // The dragged tab can close or be renamed mid-drag, which removes its view
+                // before the gesture can end or cancel.
+                if let drag, !tabs.contains(drag.url) { self.drag = nil }
                 // Closing the last tab leaves nothing for the pointer to move off.
                 if tabs.isEmpty { workspace.window?.isMovable = true }
             }
