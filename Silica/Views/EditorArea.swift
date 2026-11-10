@@ -102,6 +102,11 @@ private struct EditorTabBar: View {
                 }
                 .padding(.horizontal, Self.inset)
                 .padding(.vertical, 4)
+                // The tabs sit in the title bar, where the window server moves the window
+                // on any drag, whatever gesture or view is under the pointer. So the
+                // window stops being movable while the pointer is over the tabs; a drag
+                // on the empty part of the row still moves it, as on its background.
+                .onHover { workspace.window?.isMovable = !$0 }
             }
             .scrollIndicators(.never)
             .scrollPosition($scrollPosition)
@@ -118,7 +123,10 @@ private struct EditorTabBar: View {
             }
             .onChange(of: workspace.openTabs) { _, tabs in
                 tabWidths = tabWidths.filter { tabs.contains($0.key) }
+                // Closing the last tab leaves nothing for the pointer to move off.
+                if tabs.isEmpty { workspace.window?.isMovable = true }
             }
+            .onDisappear { workspace.window?.isMovable = true }
             // A pointer resting near an end of the bar sends no events, so a timer keeps
             // the row scrolling under it for as long as the drag lasts.
             .task(id: drag?.url) {
@@ -297,8 +305,8 @@ private struct EditorTab: View {
         .glassEffect(isActive ? .regular : .identity, in: .rect(cornerRadius: 8, style: .continuous))
         .contentShape(.rect(cornerRadius: 8, style: .continuous))
         .onTapGesture(perform: select)
-        // Claiming the drag also keeps it from moving the window, which otherwise takes
-        // any drag on its background. Measured in the bar, as the tab moves with the drag.
+        // Measured in the bar, as the tab moves with the drag. The tab bar keeps the
+        // drag from moving the window as well.
         .gesture(
             DragGesture(minimumDistance: 1, coordinateSpace: EditorTabBar.space)
                 .updating($isDragging) { _, state, _ in state = true }
