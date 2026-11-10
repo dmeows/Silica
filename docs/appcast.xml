@@ -3,6 +3,26 @@
     <channel>
         <title>Silica</title>
         <item>
+            <title>0.2.0</title>
+            <pubDate>Tue, 10 Nov 2026 22:48:32 +0800</pubDate>
+            <link>https://github.com/dqhieu/Silica</link>
+            <sparkle:fullReleaseNotesLink>https://github.com/dqhieu/Silica/releases</sparkle:fullReleaseNotesLink>
+            <sparkle:version>4</sparkle:version>
+            <sparkle:shortVersionString>0.2.0</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>26.0</sparkle:minimumSystemVersion>
+            <description sparkle:format="markdown"><![CDATA[### What's new
+
+- **Drag tabs to reorder them.** Drag an editor tab along the tab bar and the tabs it passes slide aside. With more tabs than fit, holding it near either end scrolls the bar.
+- **A steadier selection in the file tree.** The selected file or folder is now always highlighted in grey. It used to turn blue at times, such as after renaming a file.
+
+If you already have Silica, it will offer this update on its own, or choose **Silica › Check for Updates…**.
+
+Found a bug or have an idea? Please [open an issue](https://github.com/dqhieu/Silica/issues).
+
+]]></description>
+            <enclosure url="https://github.com/dqhieu/Silica/releases/download/v0.2.0/Silica-0.2.0.dmg" length="7652313" type="application/octet-stream" sparkle:edSignature="5CdceIvtjJmMhmE99HqrQ+KxcMx1TPO3/V8FGnqrcciLznfl9RrdKcGpnPvDd+E1U8K8iZqmtXpi+duVBK8dBQ=="/>
+        </item>
+        <item>
             <title>0.1.1</title>
             <pubDate>Mon, 09 Nov 2026 22:35:50 +0800</pubDate>
             <link>https://github.com/dqhieu/Silica</link>
