@@ -325,6 +325,7 @@ private struct FileNodeRow: View {
         }
         .padding(.leading, Self.leadingPadding(depth: depth))
         .tag(node.url)
+        .listRowBackground(SelectionHighlight(isSelected: workspace.selection == node.url))
         .contextMenu {
             if !node.isDirectory {
                 Button("Open") { workspace.open(node.url) }
@@ -368,6 +369,58 @@ private struct FileNodeRow: View {
             .disabled(workspace.isFilteringTree)
         } else {
             Color.clear.frame(width: 12, height: 16)
+        }
+    }
+}
+
+/// The selected row's highlight, drawn here so it's always grey. The list's own is
+/// grey after a click, which doesn't give the list keyboard focus, but turns the
+/// accent colour whenever the list does have focus (after a rename, say).
+private struct SelectionHighlight: View {
+    let isSelected: Bool
+
+    var body: some View {
+        if isSelected {
+            // The shape, inset and shade of the list's own unfocused highlight. A
+            // `Color`, as the `.primary` style can turn white on a selected row.
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(Color.primary.opacity(0.115))
+                .padding(.horizontal, 10)
+                .background(SystemHighlightRemover())
+        } else {
+            Color.clear
+        }
+    }
+}
+
+/// Turns off the selection highlight of the AppKit table behind the list this is
+/// in, leaving `SelectionHighlight` as the only one. Selection itself still works.
+private struct SystemHighlightRemover: NSViewRepresentable {
+    func makeNSView(context: Context) -> RemoverView {
+        RemoverView()
+    }
+
+    func updateNSView(_ nsView: RemoverView, context: Context) {
+        nsView.removeHighlight()
+    }
+
+    final class RemoverView: NSView {
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            removeHighlight()
+        }
+
+        func removeHighlight() {
+            var ancestor = superview
+            while let view = ancestor {
+                if let table = view as? NSTableView {
+                    if table.selectionHighlightStyle != .none {
+                        table.selectionHighlightStyle = .none
+                    }
+                    return
+                }
+                ancestor = view.superview
+            }
         }
     }
 }
