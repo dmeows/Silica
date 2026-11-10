@@ -53,11 +53,22 @@ struct EditorArea: View {
 private struct EditorTabBar: View {
     let workspace: WorkspaceModel
 
+    /// The tab being dragged to a new place, and how far the pointer has carried it.
+    @State private var drag: TabDrag?
+    /// Each tab's laid-out width, to tell which tabs a dragged one has passed.
+    @State private var tabWidths: [URL: CGFloat] = [:]
+
+    private static let spacing: CGFloat = 6
+    private static let reorderAnimation = Animation.snappy(duration: 0.2)
+
     var body: some View {
+        let offsets = drag.flatMap(reorderLayout(for:))?.offsets ?? [:]
         ScrollViewReader { proxy in
             ScrollView(.horizontal) {
-                HStack(spacing: 6) {
+                HStack(spacing: Self.spacing) {
                     ForEach(workspace.openTabs, id: \.self) { url in
+                        let offset = offsets[url] ?? 0
+                        let isDragged = drag?.url == url
                         EditorTab(
                             url: url,
                             isActive: url == workspace.activeTab,
@@ -65,8 +76,14 @@ private struct EditorTabBar: View {
                             isMissing: workspace.buffers[url]?.isMissingOnDisk == true,
                             select: { workspace.activate(url) },
                             close: { withAnimation(.snappy) { workspace.closeTab(url) } },
-                            closeOthers: { withAnimation(.snappy) { workspace.closeOtherTabs(than: url) } }
+                            closeOthers: { withAnimation(.snappy) { workspace.closeOtherTabs(than: url) } },
+                            drag: { handleDrag($0, of: url) }
                         )
+                        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { tabWidths[url] = $0 }
+                        .offset(x: offset)
+                        .zIndex(isDragged ? 1 : 0)
+                        // The dragged tab stays under the pointer; the others slide out of its way.
+                        .animation(isDragged ? nil : Self.reorderAnimation, value: offset)
                         .id(url)
                     }
                 }
@@ -80,8 +97,76 @@ private struct EditorTabBar: View {
                     withAnimation { proxy.scrollTo(active) }
                 }
             }
+            .onChange(of: workspace.openTabs) { _, tabs in
+                tabWidths = tabWidths.filter { tabs.contains($0.key) }
+            }
         }
     }
+
+    private func handleDrag(_ event: TabDragEvent, of url: URL) {
+        switch event {
+        case .moved(let translation):
+            // Dragging a tab brings it forward, as clicking it does.
+            if drag?.url != url { workspace.activate(url) }
+            drag = TabDrag(url: url, translation: translation)
+        case .dropped(let translation):
+            let destination = reorderLayout(for: TabDrag(url: url, translation: translation))?.destination
+            // The new order and the end of the drag go in one animation, so every tab
+            // settles from where the drag left it instead of jumping to its new place.
+            withAnimation(Self.reorderAnimation) {
+                if let destination { workspace.moveTab(url, to: destination) }
+                drag = nil
+            }
+        case .cancelled:
+            if drag?.url == url {
+                withAnimation(Self.reorderAnimation) { drag = nil }
+            }
+        }
+    }
+
+    /// Where the dragged tab would land if dropped now, and how far each tab sits from
+    /// its place in the row meanwhile: the dragged one follows the pointer, and the
+    /// tabs it has passed step aside by its width. The order itself changes on drop.
+    private func reorderLayout(for drag: TabDrag) -> (destination: Int, offsets: [URL: CGFloat])? {
+        let tabs = workspace.openTabs
+        guard let source = tabs.firstIndex(of: drag.url) else { return nil }
+        let widths = tabs.map { tabWidths[$0] ?? 0 }
+        // How far along the row a tab pushes the ones after it.
+        let strides = widths.map { $0 + Self.spacing }
+
+        // The tab stops at the ends of the row.
+        let offset = min(max(drag.translation, -strides[..<source].reduce(0, +)), strides[(source + 1)...].reduce(0, +))
+
+        // A neighbor is passed once the dragged tab's leading or trailing edge crosses its middle.
+        let neighbors = offset > 0 ? Array((source + 1)..<tabs.count) : Array((0..<source).reversed())
+        var destination = source
+        var passed: CGFloat = 0
+        for index in neighbors {
+            guard abs(offset) > passed + Self.spacing + widths[index] / 2 else { break }
+            passed += strides[index]
+            destination = index
+        }
+
+        var offsets = [drag.url: offset]
+        let slot = destination > source ? -strides[source] : strides[source]
+        for index in min(source, destination)...max(source, destination) where index != source {
+            offsets[tabs[index]] = slot
+        }
+        return (destination, offsets)
+    }
+}
+
+private struct TabDrag {
+    let url: URL
+    /// Horizontal distance from where the drag began.
+    var translation: CGFloat
+}
+
+private enum TabDragEvent {
+    case moved(CGFloat)
+    case dropped(CGFloat)
+    /// The drag stopped without a drop.
+    case cancelled
 }
 
 private struct EditorTab: View {
@@ -93,8 +178,11 @@ private struct EditorTab: View {
     let select: () -> Void
     let close: () -> Void
     let closeOthers: () -> Void
+    /// Reports a drag along the tab bar, which moves the tab to another place in it.
+    let drag: (TabDragEvent) -> Void
 
     @State private var isHovering = false
+    @GestureState private var isDragging = false
 
     var body: some View {
         HStack(spacing: 6) {
@@ -134,6 +222,18 @@ private struct EditorTab: View {
         .glassEffect(isActive ? .regular : .identity, in: .rect(cornerRadius: 8, style: .continuous))
         .contentShape(.rect(cornerRadius: 8, style: .continuous))
         .onTapGesture(perform: select)
+        // Claiming the drag also keeps it from moving the window, which otherwise takes
+        // any drag on its background. Global coordinates, as the tab moves with the drag.
+        .gesture(
+            DragGesture(minimumDistance: 1, coordinateSpace: .global)
+                .updating($isDragging) { _, state, _ in state = true }
+                .onChanged { drag(.moved($0.translation.width)) }
+                .onEnded { drag(.dropped($0.translation.width)) }
+        )
+        // A cancelled gesture resets its state without calling `onEnded`.
+        .onChange(of: isDragging) { _, isDragging in
+            if !isDragging { drag(.cancelled) }
+        }
         .onHover { isHovering = $0 }
         .contextMenu {
             Button("Close", action: close)

@@ -383,6 +383,17 @@ final class WorkspaceModel {
         activate(buffer.url)
     }
 
+    /// Puts a tab at another place in the tab bar (dragging it there).
+    func moveTab(_ url: URL, to index: Int) {
+        guard let current = openTabs.firstIndex(of: url) else { return }
+        let target = min(max(index, 0), openTabs.count - 1)
+        guard target != current else { return }
+        var tabs = openTabs
+        tabs.remove(at: current)
+        tabs.insert(url, at: target)
+        openTabs = tabs
+    }
+
     func closeActiveTab() {
         if let activeTab { closeTab(activeTab) }
     }
