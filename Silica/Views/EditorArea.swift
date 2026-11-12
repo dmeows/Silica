@@ -121,6 +121,14 @@ private struct EditorTabBar: View {
                     withAnimation { proxy.scrollTo(active) }
                 }
             }
+            // The row jumps back to its start when the bar changes width, which takes the
+            // active tab out of view: resizing the window or the sidebar brings it back,
+            // in step with the resize rather than animated behind it.
+            .onChange(of: barWidth) {
+                if drag == nil, let active = workspace.activeTab {
+                    proxy.scrollTo(active)
+                }
+            }
             .onChange(of: workspace.openTabs) { _, tabs in
                 tabWidths = tabWidths.filter { tabs.contains($0.key) }
                 // The dragged tab can close or be renamed mid-drag, which removes its view
