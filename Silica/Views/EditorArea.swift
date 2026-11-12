@@ -115,6 +115,7 @@ private struct EditorTabBar: View {
             }
             .fixedSize(horizontal: false, vertical: true)
             .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { barWidth = $0 }
+            .background(WheelScrollsSideways())
             .coordinateSpace(Self.space)
             .onChange(of: workspace.activeTab) { _, active in
                 if let active {
@@ -242,6 +243,62 @@ private struct EditorTabBar: View {
             offsets[tabs[index]] = slot
         }
         return (destination, offsets)
+    }
+}
+
+/// Lets a mouse wheel scroll the tab row. A wheel only scrolls up and down, which a
+/// row that scrolls sideways ignores unless Shift is held, so while the pointer is on
+/// the bar the wheel's travel reaches the row as sideways travel. Trackpads and mice
+/// that scroll both ways are left as they are.
+private struct WheelScrollsSideways: NSViewRepresentable {
+    func makeNSView(context: Context) -> AnchorView { AnchorView() }
+
+    func updateNSView(_ nsView: AnchorView, context: Context) {}
+
+    static func dismantleNSView(_ nsView: AnchorView, coordinator: ()) {
+        nsView.stopWatching()
+    }
+
+    /// Marks where the bar is in its window, behind the row.
+    final class AnchorView: NSView {
+        private var monitor: Any?
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            stopWatching()
+            guard window != nil else { return }
+            monitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { [weak self] event in
+                // A wheel's events belong to no gesture, unlike a trackpad's.
+                guard let self, event.window === window, event.phase.isEmpty, event.momentumPhase.isEmpty,
+                      event.scrollingDeltaX == 0, event.scrollingDeltaY != 0,
+                      bounds.contains(convert(event.locationInWindow, from: nil)) else { return event }
+                return event.turnedSideways() ?? event
+            }
+        }
+
+        func stopWatching() {
+            if let monitor { NSEvent.removeMonitor(monitor) }
+            monitor = nil
+        }
+    }
+}
+
+private extension NSEvent {
+    /// A copy of a scroll event with its vertical travel made horizontal, as holding
+    /// Shift does.
+    func turnedSideways() -> NSEvent? {
+        guard let copy = cgEvent?.copy() else { return nil }
+        let lines = copy.getIntegerValueField(.scrollWheelEventDeltaAxis1)
+        let fraction = copy.getDoubleValueField(.scrollWheelEventFixedPtDeltaAxis1)
+        let points = copy.getIntegerValueField(.scrollWheelEventPointDeltaAxis1)
+        // Whole lines first: setting them recomputes the finer amounts.
+        copy.setIntegerValueField(.scrollWheelEventDeltaAxis1, value: 0)
+        copy.setIntegerValueField(.scrollWheelEventDeltaAxis2, value: lines)
+        copy.setDoubleValueField(.scrollWheelEventFixedPtDeltaAxis1, value: 0)
+        copy.setDoubleValueField(.scrollWheelEventFixedPtDeltaAxis2, value: fraction)
+        copy.setIntegerValueField(.scrollWheelEventPointDeltaAxis1, value: 0)
+        copy.setIntegerValueField(.scrollWheelEventPointDeltaAxis2, value: points)
+        return NSEvent(cgEvent: copy)
     }
 }
 
