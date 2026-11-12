@@ -3,6 +3,30 @@
     <channel>
         <title>Silica</title>
         <item>
+            <title>0.3.0</title>
+            <pubDate>Thu, 12 Nov 2026 18:58:59 +0800</pubDate>
+            <link>https://github.com/dqhieu/Silica</link>
+            <sparkle:fullReleaseNotesLink>https://github.com/dqhieu/Silica/releases</sparkle:fullReleaseNotesLink>
+            <sparkle:version>5</sparkle:version>
+            <sparkle:shortVersionString>0.3.0</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>26.0</sparkle:minimumSystemVersion>
+            <description sparkle:format="markdown"><![CDATA[### What's new
+
+- **Parent folders stay in view in the file tree.** Scrolled deep into a project, the open folders that contain the rows you're looking at now stay pinned at the top of the tree. Click a pinned folder to scroll back to it. It's on by default; turn it off in **Settings › General**.
+- **Switch tabs from the keyboard.** **⌃Tab** and **⌃⇧Tab** (or **⇧⌘]** and **⇧⌘[**) step through the open tabs, going round from either end to the other. The commands are also in the **View** menu as Select Next Tab and Select Previous Tab.
+- **Scroll the tab bar with a mouse wheel.** With the pointer over the tab bar, an ordinary mouse wheel now scrolls the tabs sideways, so tabs past the end of the bar can be reached without a trackpad.
+- **The tab bar keeps the active tab in view.** Resizing the window or the sidebar no longer scrolls the tab row back to its first tab.
+- **Tabs fade out at the ends of the tab bar.** A tab scrolled part of the way out now fades instead of being cut off flat.
+- **The minimap is hidden by default.** Turn it back on with **View › Minimap** or in **Settings › Editor**.
+
+If you already have Silica, it will offer this update on its own, or choose **Silica › Check for Updates…**.
+
+Found a bug or have an idea? Please [open an issue](https://github.com/dqhieu/Silica/issues).
+
+]]></description>
+            <enclosure url="https://github.com/dqhieu/Silica/releases/download/v0.3.0/Silica-0.3.0.dmg" length="7709093" type="application/octet-stream" sparkle:edSignature="giQNcGdK1G2GDwtFVXJxL8Wx8TAfMpyLwGFip2mnJOzC5ISVe7u2qHJE/ULYCl3axJIN/pfWR6Zl08d2MsmgDQ=="/>
+        </item>
+        <item>
             <title>0.2.0</title>
             <pubDate>Tue, 10 Nov 2026 22:48:32 +0800</pubDate>
             <link>https://github.com/dqhieu/Silica</link>
