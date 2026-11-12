@@ -368,6 +368,14 @@ final class WorkspaceModel {
         }
     }
 
+    /// Select Next Tab / Select Previous Tab: the tab `offset` places along the bar from the
+    /// active one, going round from either end to the other.
+    func activateTab(offsetBy offset: Int) {
+        let count = openTabs.count
+        guard count > 1, let activeTab, let index = openTabs.firstIndex(of: activeTab) else { return }
+        activate(openTabs[((index + offset) % count + count) % count])
+    }
+
     /// New File (⌘N): an empty "Untitled-N" tab, saved somewhere only when asked.
     func newUntitledFile() {
         let taken = Set(openTabs.filter(\.isUntitled).map(\.lastPathComponent))

@@ -137,6 +137,21 @@ struct AppCommands: Commands {
             }
             .keyboardShortcut("v", modifiers: [.command, .shift])
             .disabled(workspace?.activeBuffer?.isMarkdown != true)
+
+            Divider()
+
+            // The file tabs, not the window tabs of the Window menu's Show Next Tab, which
+            // has ⌃Tab as well: this menu comes first, so the file tabs get the key.
+            // ⇧⌘] and ⇧⌘[ do the same; see KeyWorkspace.installKeyboardShortcuts().
+            let hasOtherTabs = (workspace?.openTabs.count ?? 0) > 1
+
+            Button("Select Next Tab") { workspace?.activateTab(offsetBy: 1) }
+                .keyboardShortcut(.tab, modifiers: .control)
+                .disabled(!hasOtherTabs)
+
+            Button("Select Previous Tab") { workspace?.activateTab(offsetBy: -1) }
+                .keyboardShortcut(.tab, modifiers: [.control, .shift])
+                .disabled(!hasOtherTabs)
         }
 
         CommandGroup(after: .sidebar) {
