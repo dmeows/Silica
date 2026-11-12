@@ -30,6 +30,11 @@ Packages/
 *.p12
 *.p8
 
+# Launch video (Remotion project, screenshots and renders), and the config
+# that starts its preview
+/video/
+/.claude/launch.json
+
 # Editors
 .vscode/
 .idea/
