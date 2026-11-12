@@ -62,6 +62,8 @@ private struct EditorTabBar: View {
     @State private var scrollOffset: CGFloat = 0
     /// Scrolls the row during a drag; showing the active tab still goes through the reader.
     @State private var scrollPosition = ScrollPosition(idType: Never.self)
+    /// How much each end of the row is faded: fully once tabs are scrolled out past it.
+    @State private var edgeFades = EdgeFades()
 
     /// The bar's own space, which stays put while the row scrolls and the tabs move.
     static let space: NamedCoordinateSpace = .named("EditorTabBar")
@@ -73,12 +75,14 @@ private struct EditorTabBar: View {
     private static let autoscrollZone: CGFloat = 40
     /// Scrolling speed, in points per second for each point the pointer is into the zone.
     private static let autoscrollRate: CGFloat = 10
+    /// How far in from an end of the bar the row fades out.
+    private static let fadeWidth: CGFloat = 20
 
     var body: some View {
         let offsets = drag.flatMap(reorderLayout(for:))?.offsets ?? [:]
         ScrollViewReader { proxy in
             ScrollView(.horizontal) {
-                HStack(spacing: Self.spacing) {
+                HStack(spacing: Self.spacing - 2 * Self.fadeWidth) {
                     ForEach(workspace.openTabs, id: \.self) { url in
                         let offset = offsets[url] ?? 0
                         let isDragged = drag?.url == url
@@ -93,6 +97,10 @@ private struct EditorTabBar: View {
                             drag: { handleDrag($0, of: url, proxy: proxy) }
                         )
                         .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { tabWidths[url] = $0 }
+                        // Room on either side that the row scrolls into view with the tab,
+                        // so that it comes to rest clear of the faded ends of the bar. The
+                        // row's spacing and padding take the same room back out.
+                        .padding(.horizontal, Self.fadeWidth)
                         .offset(x: offset)
                         .zIndex(isDragged ? 1 : 0)
                         // The dragged tab stays under the pointer; the others slide out of its way.
@@ -100,7 +108,7 @@ private struct EditorTabBar: View {
                         .id(url)
                     }
                 }
-                .padding(.horizontal, Self.inset)
+                .padding(.horizontal, Self.inset - Self.fadeWidth)
                 .padding(.vertical, 4)
                 // The tabs sit in the title bar, where the window server moves the window
                 // on any drag, whatever gesture or view is under the pointer. So the
@@ -113,8 +121,17 @@ private struct EditorTabBar: View {
             .onScrollGeometryChange(for: CGFloat.self) { $0.contentOffset.x } action: { _, offset in
                 scrollOffset = offset
             }
+            .onScrollGeometryChange(for: EdgeFades.self) { geometry in
+                let offset = geometry.contentOffset.x
+                let hiddenAfter = geometry.contentSize.width - geometry.containerSize.width - offset
+                return EdgeFades(leading: offset, trailing: hiddenAfter, over: Self.fadeWidth)
+            } action: { _, fades in
+                edgeFades = fades
+            }
             .fixedSize(horizontal: false, vertical: true)
             .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { barWidth = $0 }
+            // A tab scrolled part of the way out fades away rather than ending in a cut.
+            .mask { fadeMask }
             .background(WheelScrollsSideways())
             .coordinateSpace(Self.space)
             .onChange(of: workspace.activeTab) { _, active in
@@ -151,6 +168,23 @@ private struct EditorTabBar: View {
                     last = now
                 }
             }
+        }
+    }
+
+    /// Opaque across the bar, clearing towards an end that has tabs scrolled out past it.
+    private var fadeMask: some View {
+        HStack(spacing: 0) {
+            LinearGradient(
+                colors: [.black.opacity(1 - edgeFades.leading), .black],
+                startPoint: .leading, endPoint: .trailing
+            )
+            .frame(width: Self.fadeWidth)
+            Color.black
+            LinearGradient(
+                colors: [.black, .black.opacity(1 - edgeFades.trailing)],
+                startPoint: .leading, endPoint: .trailing
+            )
+            .frame(width: Self.fadeWidth)
         }
     }
 
@@ -299,6 +333,20 @@ private extension NSEvent {
         copy.setIntegerValueField(.scrollWheelEventPointDeltaAxis1, value: 0)
         copy.setIntegerValueField(.scrollWheelEventPointDeltaAxis2, value: points)
         return NSEvent(cgEvent: copy)
+    }
+}
+
+/// How strongly each end of the tab row fades, from 0 (not at all) to 1.
+private struct EdgeFades: Equatable {
+    var leading: CGFloat = 0
+    var trailing: CGFloat = 0
+
+    init() {}
+
+    /// Each end fades in over the first `distance` points of row scrolled out past it.
+    init(leading: CGFloat, trailing: CGFloat, over distance: CGFloat) {
+        self.leading = min(max(leading / distance, 0), 1)
+        self.trailing = min(max(trailing / distance, 0), 1)
     }
 }
 
