@@ -161,7 +161,7 @@ private struct SettingsSidebar: View {
     }
 }
 
-/// Appearance, whether projects reopen their tabs, and update checks.
+/// Appearance, how projects open and show their files, and update checks.
 private struct GeneralSettingsPane: View {
     @Bindable private var settings = EditorSettings.shared
     @ObservedObject private var updater = AppUpdater.shared
@@ -183,6 +183,7 @@ private struct GeneralSettingsPane: View {
 
             SettingsGroup("Projects") {
                 SettingsToggle("Reopen a project’s tabs where you left them", isOn: $settings.restoresTabs)
+                SettingsToggle("Keep parent folders in view while scrolling the file tree", isOn: $settings.pinsParentFolders)
             }
 
             SettingsGroup("Updates") {

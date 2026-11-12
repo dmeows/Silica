@@ -31,6 +31,7 @@ final class EditorSettings {
         static let syntaxTheme = "syntaxTheme"
         static let appearance = "appearance"
         static let restoresTabs = "restoresOpenTabs"
+        static let pinsParentFolders = "fileTreePinsParentFolders"
     }
 
     /// Font size of the editor text; the line-number gutter scales with it.
@@ -127,6 +128,15 @@ final class EditorSettings {
         }
     }
 
+    /// The file tree keeps the folders around its first visible row at the top
+    /// while it scrolls.
+    var pinsParentFolders: Bool {
+        didSet {
+            guard pinsParentFolders != oldValue else { return }
+            store(pinsParentFolders, Key.pinsParentFolders, isDefault: pinsParentFolders)
+        }
+    }
+
     var canIncreaseFontSize: Bool { fontSize < Self.fontSizeRange.upperBound }
     var canDecreaseFontSize: Bool { fontSize > Self.fontSizeRange.lowerBound }
     var isDefaultFontSize: Bool { fontSize == Self.defaultFontSize }
@@ -146,6 +156,7 @@ final class EditorSettings {
         syntaxTheme = defaults.string(forKey: Key.syntaxTheme).flatMap(SyntaxTheme.init(rawValue:)) ?? .default
         appearance = defaults.string(forKey: Key.appearance).flatMap(Appearance.init(rawValue:)) ?? .system
         restoresTabs = defaults.object(forKey: Key.restoresTabs) as? Bool ?? true
+        pinsParentFolders = defaults.object(forKey: Key.pinsParentFolders) as? Bool ?? true
     }
 
     private func store(_ value: Any?, _ key: String, isDefault: Bool) {

@@ -4,6 +4,7 @@ import SwiftUI
 /// mode, Find in Project.
 struct FileTreeView: View {
     @Bindable var workspace: WorkspaceModel
+    @State private var pinnedFolders = PinnedFolderTracker()
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -81,9 +82,9 @@ struct FileTreeView: View {
     static let listLeadingOutset: CGFloat = 4
 
     private var tree: some View {
-        ScrollViewReader { proxy in
+        let rows = visibleRows()
+        return ScrollViewReader { proxy in
             List(selection: $workspace.selection) {
-                let rows = visibleRows()
                 if rows.isEmpty {
                     Text(workspace.isFilteringTree ? "No files match “\(workspace.treeFilter)”" : "This project is empty")
                         .foregroundStyle(.secondary)
@@ -143,6 +144,18 @@ struct FileTreeView: View {
             // highlight starts at the card inset, leaving the chevrons room inside it.
             .padding(.leading, -Self.listLeadingOutset)
             .clipped()
+            // The folders around the first visible row stay pinned over the top of
+            // the list, which is hidden where they are: the sidebar has no opaque
+            // background for them to cover the rows with.
+            // Turned off in Settings, the tracker gets no rows to pin.
+            .modifier(PinnedFolderMask(tracker: pinnedFolders))
+            .background(PinnedFolderAnchor(
+                tracker: pinnedFolders,
+                rows: EditorSettings.shared.pinsParentFolders ? rows.map(\.pinnedFolderRow) : []
+            ))
+            .overlay(alignment: .top) {
+                PinnedFolders(rows: rows, tracker: pinnedFolders, workspace: workspace)
+            }
             // Quick Open reveals the file it opened; wait a turn so newly
             // expanded folders have rows to scroll to.
             .onChange(of: workspace.revealCount) {
@@ -163,7 +176,7 @@ struct FileTreeView: View {
         }
     }
 
-    private struct TreeRow: Identifiable {
+    fileprivate struct TreeRow: Identifiable {
         enum Kind {
             case node(FileNode)
             /// The name field for a new file or folder.
@@ -172,12 +185,23 @@ struct FileTreeView: View {
 
         let kind: Kind
         let depth: Int
+        /// A folder shown with its contents.
+        var isOpenFolder = false
+
+        var pinnedFolderRow: PinnedFolderTracker.Row {
+            PinnedFolderTracker.Row(depth: depth, isOpenFolder: isOpenFolder)
+        }
 
         var id: String {
             switch kind {
             case .node(let node): node.url.absoluteString
             case .draft: "silica-new-item"
             }
+        }
+
+        /// The file or folder the row shows.
+        var url: URL? {
+            if case .node(let node) = kind { node.url } else { nil }
         }
     }
 
@@ -201,15 +225,105 @@ struct FileTreeView: View {
             }
             for node in nodes {
                 if let filtered, !filtered.contains(node.relativePath) { continue }
-                rows.append(TreeRow(kind: .node(node), depth: depth))
-                let isOpen = filtered != nil || node.isExpanded
-                if node.isDirectory, isOpen, let children = node.children {
+                let isOpen = node.isDirectory && (filtered != nil || node.isExpanded)
+                rows.append(TreeRow(kind: .node(node), depth: depth, isOpenFolder: isOpen))
+                if isOpen, let children = node.children {
                     add(children, depth: depth + 1, in: node.url)
                 }
             }
         }
         add(workspace.root.children ?? [], depth: 0, in: workspace.root.url)
         return rows
+    }
+}
+
+// MARK: - Pinned folders
+
+/// Hides the top of the list where the pinned folders are drawn.
+private struct PinnedFolderMask: ViewModifier {
+    let tracker: PinnedFolderTracker
+
+    func body(content: Content) -> some View {
+        content.mask {
+            Rectangle().padding(.top, tracker.coveredHeight)
+        }
+    }
+}
+
+/// The open folders that contain the first visible row, pinned over the top of the
+/// tree while their contents scroll (see `PinnedFolderTracker`). Clicking one
+/// scrolls back to it.
+private struct PinnedFolders: View {
+    let rows: [FileTreeView.TreeRow]
+    let tracker: PinnedFolderTracker
+    let workspace: WorkspaceModel
+
+    var body: some View {
+        let layout = tracker.contentLayout
+        VStack(spacing: 0) {
+            ForEach(tracker.pinned, id: \.index) { pinned in
+                if let node = node(at: pinned.index) {
+                    FileNodeRow(node: node, depth: rows[pinned.index].depth, workspace: workspace, isPinned: true)
+                        .frame(height: layout.height)
+                        .padding(.leading, layout.leading)
+                        .padding(.trailing, layout.trailing)
+                        .padding(.top, layout.top)
+                        .frame(height: pinned.height, alignment: .top)
+                        .background {
+                            if workspace.selection == node.url {
+                                SelectionHighlightShape()
+                                    .padding(.leading, 10 - FileTreeView.listLeadingOutset)
+                                    .padding(.trailing, 10)
+                            }
+                        }
+                        .contentShape(.rect)
+                        .onTapGesture { tracker.reveal(pinned) }
+                        // On the whole row, as in the list; the row's own menu only
+                        // covers its icon and name out here.
+                        .contextMenu { FileNodeMenu(node: node, workspace: workspace) }
+                        // A folder scrolling out slides up under the one above it.
+                        .offset(y: pinned.top - pinned.slotTop)
+                        .frame(height: pinned.height)
+                        .clipped()
+                }
+            }
+        }
+        // The text size of the list's small sidebar rows.
+        .font(.subheadline)
+        // A hairline between the pinned folders and the rows scrolling under them.
+        .overlay(alignment: .top) {
+            if !tracker.pinned.isEmpty {
+                Rectangle()
+                    .fill(.separator)
+                    .frame(height: 1)
+                    .padding(.leading, 10 - FileTreeView.listLeadingOutset)
+                    .padding(.trailing, 10)
+                    .offset(y: tracker.coveredHeight)
+                    .allowsHitTesting(false)
+            }
+        }
+        // Names are typed in the list's own rows: bring the folder's row back.
+        .onChange(of: workspace.treeEdit) { _, edit in
+            let url: URL? = switch edit {
+            case .rename(let url): url
+            case .create(let folder, _): folder
+            case nil: nil
+            }
+            guard let url, let pinned = tracker.pinned.first(where: { node(at: $0.index)?.url == url }) else { return }
+            tracker.reveal(pinned)
+        }
+        // The arrow keys can move the selection up under the pinned folders.
+        .onChange(of: workspace.selection) { _, selection in
+            guard let selection, !tracker.pinned.isEmpty,
+                  let index = rows.firstIndex(where: { $0.url == selection }) else { return }
+            // After the list has scrolled the row into view itself.
+            DispatchQueue.main.async { tracker.uncover(row: index) }
+        }
+    }
+
+    private func node(at index: Int) -> FileNode? {
+        guard rows.indices.contains(index), case .node(let node) = rows[index].kind else { return nil }
+        return node
     }
 }
 
@@ -263,6 +377,8 @@ private struct FileNodeRow: View {
     let node: FileNode
     let depth: Int
     let workspace: WorkspaceModel
+    /// A copy pinned over the top of the tree, outside the list.
+    var isPinned = false
 
     /// The extra leading space for each nesting level.
     static let indentWidth: CGFloat = 14
@@ -276,8 +392,9 @@ private struct FileNodeRow: View {
         CGFloat(depth) * indentWidth - firstLevelShift
     }
 
+    /// Names are typed in the list's own row, never in a pinned copy.
     private var isRenaming: Bool {
-        workspace.treeEdit == .rename(node.url)
+        !isPinned && workspace.treeEdit == .rename(node.url)
     }
 
     /// Drawn open: expanded, or shown with its matches while filtering.
@@ -326,26 +443,7 @@ private struct FileNodeRow: View {
         .padding(.leading, Self.leadingPadding(depth: depth))
         .tag(node.url)
         .listRowBackground(SelectionHighlight(isSelected: workspace.selection == node.url))
-        .contextMenu {
-            if !node.isDirectory {
-                Button("Open") { workspace.open(node.url) }
-                Divider()
-            }
-            let folder = node.isDirectory ? node.url : node.url.deletingLastPathComponent()
-            Button("New File…") { workspace.beginNewItem(isDirectory: false, in: folder) }
-            Button("New Folder…") { workspace.beginNewItem(isDirectory: true, in: folder) }
-            Divider()
-            Button("Rename…") { workspace.beginRename(node.url) }
-            Button("Duplicate") { workspace.duplicate(node.url) }
-            Button("Move to Trash") { workspace.moveToTrash(node.url) }
-            Divider()
-            Button("Show in Finder") { Finder.reveal(node.url) }
-            Button("Copy Path") { Finder.copyPath(node.url) }
-            Button("Copy Relative Path") {
-                NSPasteboard.general.clearContents()
-                NSPasteboard.general.setString(workspace.relativePath(of: node.url), forType: .string)
-            }
-        }
+        .contextMenu { FileNodeMenu(node: node, workspace: workspace) }
     }
 
     /// A smaller chevron than the system outline's; files get the same width of space.
@@ -373,6 +471,33 @@ private struct FileNodeRow: View {
     }
 }
 
+/// The context menu of a file or folder in the tree.
+private struct FileNodeMenu: View {
+    let node: FileNode
+    let workspace: WorkspaceModel
+
+    var body: some View {
+        if !node.isDirectory {
+            Button("Open") { workspace.open(node.url) }
+            Divider()
+        }
+        let folder = node.isDirectory ? node.url : node.url.deletingLastPathComponent()
+        Button("New File…") { workspace.beginNewItem(isDirectory: false, in: folder) }
+        Button("New Folder…") { workspace.beginNewItem(isDirectory: true, in: folder) }
+        Divider()
+        Button("Rename…") { workspace.beginRename(node.url) }
+        Button("Duplicate") { workspace.duplicate(node.url) }
+        Button("Move to Trash") { workspace.moveToTrash(node.url) }
+        Divider()
+        Button("Show in Finder") { Finder.reveal(node.url) }
+        Button("Copy Path") { Finder.copyPath(node.url) }
+        Button("Copy Relative Path") {
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(workspace.relativePath(of: node.url), forType: .string)
+        }
+    }
+}
+
 /// The selected row's highlight, drawn here so it's always grey. The list's own is
 /// grey after a click, which doesn't give the list keyboard focus, but turns the
 /// accent colour whenever the list does have focus (after a rename, say).
@@ -383,13 +508,19 @@ private struct SelectionHighlight: View {
         if isSelected {
             // The shape, inset and shade of the list's own unfocused highlight. A
             // `Color`, as the `.primary` style can turn white on a selected row.
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(Color.primary.opacity(0.115))
+            SelectionHighlightShape()
                 .padding(.horizontal, 10)
                 .background(SystemHighlightRemover())
         } else {
             Color.clear
         }
+    }
+}
+
+private struct SelectionHighlightShape: View {
+    var body: some View {
+        RoundedRectangle(cornerRadius: 8, style: .continuous)
+            .fill(Color.primary.opacity(0.115))
     }
 }
 
