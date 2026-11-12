@@ -93,7 +93,7 @@ final class EditorSettings {
     var showsMinimap: Bool {
         didSet {
             guard showsMinimap != oldValue else { return }
-            store(showsMinimap, Key.showsMinimap, isDefault: showsMinimap)
+            store(showsMinimap, Key.showsMinimap, isDefault: !showsMinimap)
             NotificationCenter.default.post(name: .editorSettingsDidChange, object: self)
         }
     }
@@ -152,7 +152,7 @@ final class EditorSettings {
         indentsWithTabs = defaults.bool(forKey: Key.indentsWithTabs)
         showsLineNumbers = defaults.object(forKey: Key.showsLineNumbers) as? Bool ?? true
         showsIndentGuides = defaults.object(forKey: Key.showsIndentGuides) as? Bool ?? true
-        showsMinimap = defaults.object(forKey: Key.showsMinimap) as? Bool ?? true
+        showsMinimap = defaults.bool(forKey: Key.showsMinimap)
         syntaxTheme = defaults.string(forKey: Key.syntaxTheme).flatMap(SyntaxTheme.init(rawValue:)) ?? .default
         appearance = defaults.string(forKey: Key.appearance).flatMap(Appearance.init(rawValue:)) ?? .system
         restoresTabs = defaults.object(forKey: Key.restoresTabs) as? Bool ?? true
