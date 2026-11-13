@@ -9,13 +9,15 @@ struct FileTreeView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             // Title bar row: traffic lights, then the header, then the toggle.
-            HStack(spacing: 8) {
+            // The buttons' hover fills sit side by side, so no spacing between them,
+            // and the trailing padding leaves the last icon about 8pt from the edge.
+            HStack(spacing: 0) {
                 header
                 SidebarToggleButton(workspace: workspace)
             }
             .frame(height: WorkspaceLayout.titleBarHeight)
             .padding(.leading, WorkspaceLayout.trafficLightsWidth)
-            .padding(.trailing, 8)
+            .padding(.trailing, 4)
             // Above the list, which reaches up underneath this row (see below).
             .zIndex(1)
 
@@ -40,14 +42,14 @@ struct FileTreeView: View {
     // MARK: Header
 
     private var header: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: 0) {
             Text(workspace.sidebarMode == .search ? "Search" : workspace.name)
                 .lineLimit(1)
                 .truncationMode(.middle)
                 .font(.headline)
                 .help(workspace.rootURL.path(percentEncoded: false))
 
-            Spacer(minLength: 0)
+            Spacer(minLength: 8)
 
             if workspace.sidebarMode == .explorer {
                 Button {
@@ -67,7 +69,7 @@ struct FileTreeView: View {
             }
             .help(workspace.sidebarMode == .search ? "Show Explorer (⇧⌘E)" : "Find in Project (⇧⌘F)")
         }
-        .buttonStyle(.borderless)
+        .buttonStyle(.titleBarIcon)
         .foregroundStyle(.secondary)
     }
 
