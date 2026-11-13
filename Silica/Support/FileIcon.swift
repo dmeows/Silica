@@ -49,6 +49,7 @@ struct FileIcon: View {
         case "png", "jpg", "jpeg", "gif", "heic", "webp", "ico", "icns": return ("photo", C.mint)
         case "pdf": return ("doc.richtext", C.red)
         case "zip", "gz", "tar", "rar", "7z": return ("archivebox", C.brown)
+        case "diff", "patch", "rej": return ("plusminus", C.green)
         case "lock", "resolved": return ("lock", C.neutral)
         case "txt", "log": return ("doc.plaintext", C.neutral)
         default: return ("doc", C.neutral)
