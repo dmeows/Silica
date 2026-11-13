@@ -628,13 +628,21 @@ private nonisolated enum Grammars {
             SyntaxPattern(.type, ##"^(?:diff -|Index: |={10,}$).*"##),
             SyntaxPattern(.type, ##"^--- .*\r?\n\+\+\+ .*"##),
             SyntaxPattern(.type, ##"^\*\*\* .*(?:\r?\n--- .*)?"##),
-            SyntaxPattern(.comment, ##"^(?:index [0-9a-f,]+\.\.[0-9a-f]+|old mode |new mode |deleted file mode |new file mode |similarity index |dissimilarity index |rename from |rename to |copy from |copy to |Binary files |GIT binary patch|Only in |\\ |From [0-9a-f]{40} ).*"##),
-            // The separator of a normal diff or before a diffstat, and the mail signature.
-            SyntaxPattern(.comment, ##"^(?:---|-- |\*{15})$"##),
+            SyntaxPattern(.comment, ##"^(?:index [0-9a-f,]+\.\.[0-9a-f]+|old mode |new mode |deleted file mode |new file mode |similarity index |dissimilarity index |rename from |rename to |copy from |copy to |Binary files |GIT binary patch|Only in |\\ ).*"##),
+            // The `---` before a diffstat or between the halves of a normal diff. A removed
+            // `--` line reads the same, so the line after it has to tell them apart.
+            SyntaxPattern(.comment, ##"^---(?=\r?\n(?:>(?: |$)| \S.*\| +(?:\d+(?: [+-]+)?|Bin .*)$| \d+ files? changed|\r?\n))"##),
+            // The mail signature (`-- ` above git's version) and a context diff's separator.
+            SyntaxPattern(.comment, ##"^(?:-- (?=\r?\n\d)|\*{15}$)"##),
             // Hunk ranges: `@@ -1,4 +1,6 @@`, then the context and normal forms.
             SyntaxPattern(.link, ##"^(@@+) [-+\d, ]+ \1"##),
             SyntaxPattern(.link, ##"^(?:\*\*\* \d+(?:,\d+)? \*\*\*\*|--- \d+(?:,\d+)? ----)$"##),
             SyntaxPattern(.link, ##"^\d+(?:,\d+)?[acd]\d+(?:,\d+)?$"##),
+            // A format-patch's mail header and commit message, through the `---` that ends
+            // them, so `- ` bullets in the message aren't read as removed lines. It comes
+            // last to cover whatever else the message resembles; a cover letter has no
+            // `---` and is all message.
+            SyntaxPattern(.comment, ##"^From [0-9a-f]{40} [\s\S]*?(?:^---$|\z)"##),
         ]
     )
 }
