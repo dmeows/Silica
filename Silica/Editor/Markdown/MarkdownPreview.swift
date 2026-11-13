@@ -62,6 +62,10 @@ final class MarkdownPreview: NSObject, WKNavigationDelegate, WKScriptMessageHand
     private var pendingHTML: String?
     /// Where to scroll an HTML page to once it has loaded.
     private var pendingScroll: CGPoint?
+    /// Silica has just asked for the editor's text to load as the page. That load
+    /// is the only one at the page's own URL that's let through, so a self-link,
+    /// form or script can't swap the page for the file on disk.
+    private var isLoadingPage = false
     /// The web content process has been given access to `readAccessURL`, which it
     /// keeps until it exits.
     private var hasReadAccess = false
@@ -151,7 +155,7 @@ final class MarkdownPreview: NSObject, WKNavigationDelegate, WKScriptMessageHand
             // Still being given access; show this text when it's done instead.
             pendingHTML = html
         } else if hasReadAccess {
-            webView.loadHTMLString(html, baseURL: fileURL)
+            loadPage(html)
         } else {
             hasReadAccess = true
             pendingHTML = html
@@ -159,12 +163,17 @@ final class MarkdownPreview: NSObject, WKNavigationDelegate, WKScriptMessageHand
         }
     }
 
+    private func loadPage(_ html: String) {
+        isLoadingPage = true
+        webView.loadHTMLString(html, baseURL: fileURL)
+    }
+
     /// Loads the page that was waiting for access to the folder. Loading the folder
     /// fails, but the process keeps the access.
     private func showPendingHTML() {
         guard let html = pendingHTML else { return }
         pendingHTML = nil
-        webView.loadHTMLString(html, baseURL: fileURL)
+        loadPage(html)
     }
 
     /// The 1-based source line of the first block visible at the top.
@@ -243,8 +252,10 @@ final class MarkdownPreview: NSObject, WKNavigationDelegate, WKScriptMessageHand
         }
     }
 
-    /// For an HTML file: the file itself, or a place in it (`#anchor`), and the folder
-    /// while it's loaded to give the process access.
+    /// For an HTML file: the page Silica is loading, a place in it (`#anchor`), and
+    /// the folder while it's loaded to give the process access. Any other navigation
+    /// to the page itself would load the file from disk, without unsaved edits and
+    /// in the wrong encoding, so it's cancelled with the rest.
     private func loadsInPlace(_ url: URL) -> Bool {
         guard format == .html, url.isFileURL else { return false }
         // A folder's URL may or may not end in a slash.
@@ -252,13 +263,22 @@ final class MarkdownPreview: NSObject, WKNavigationDelegate, WKScriptMessageHand
             let path = url.standardizedFileURL.path(percentEncoded: false)
             return path.count > 1 && path.hasSuffix("/") ? String(path.dropLast()) : path
         }
-        return path(url) == path(fileURL) || (pendingHTML != nil && path(url) == path(readAccessURL))
+        if path(url) == path(fileURL), url.query == nil {
+            if isLoadingPage, url.fragment == nil {
+                isLoadingPage = false
+                return true
+            }
+            // A jump within the page, which doesn't reload it.
+            if url.fragment != nil { return true }
+        }
+        return pendingHTML != nil && path(url) == path(readAccessURL)
     }
 
     func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
         // A new process starts without the access the old one was given.
         hasReadAccess = false
         pendingHTML = nil
+        isLoadingPage = false
     }
 
     // MARK: WKScriptMessageHandler
