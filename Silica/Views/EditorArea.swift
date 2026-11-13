@@ -13,8 +13,8 @@ struct EditorArea: View {
                 }
                 EditorTabBar(workspace: workspace)
                 Spacer(minLength: 0)
-                if let buffer = workspace.activeBuffer, buffer.isMarkdown {
-                    MarkdownModeToggle(buffer: buffer)
+                if let buffer = workspace.activeBuffer, buffer.canPreview {
+                    PreviewModeToggle(buffer: buffer)
                         .padding(.trailing, WorkspaceLayout.cardInset + 4)
                 }
             }
@@ -532,12 +532,12 @@ private struct StatusBar: View {
 
 /// Source / Preview switch for Markdown tabs, in the quiet icon style of the other
 /// title bar buttons; the current mode is drawn in the primary color on a soft fill.
-private struct MarkdownModeToggle: View {
+private struct PreviewModeToggle: View {
     let buffer: EditorBuffer
 
     var body: some View {
         HStack(spacing: 2) {
-            option("doc.plaintext", help: "Show Markdown (⇧⌘V)", isOn: !buffer.isShowingPreview) {
+            option("doc.plaintext", help: "Show \(buffer.previewFormat?.sourceName ?? "Source") (⇧⌘V)", isOn: !buffer.isShowingPreview) {
                 buffer.setShowingPreview(false)
             }
             option("eye", help: "Show Preview (⇧⌘V)", isOn: buffer.isShowingPreview) {

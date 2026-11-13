@@ -132,11 +132,13 @@ struct AppCommands: Commands {
             Divider()
 
             // ⇧⌘V itself is handled by KeyWorkspace.installKeyboardShortcuts().
-            Button(workspace?.activeBuffer?.isShowingPreview == true ? "Show Markdown" : "Show Preview") {
+            Button(workspace?.activeBuffer.flatMap { buffer in
+                buffer.isShowingPreview ? buffer.previewFormat.map { "Show \($0.sourceName)" } : nil
+            } ?? "Show Preview") {
                 workspace?.activeBuffer?.togglePreview()
             }
             .keyboardShortcut("v", modifiers: [.command, .shift])
-            .disabled(workspace?.activeBuffer?.isMarkdown != true)
+            .disabled(workspace?.activeBuffer?.canPreview != true)
 
             Divider()
 

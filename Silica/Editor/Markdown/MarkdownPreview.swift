@@ -3,17 +3,49 @@ import SwiftUI
 import UniformTypeIdentifiers
 import WebKit
 
-/// The rendered view of one Markdown buffer, kept alive with its tab so switching
-/// back and forth is instant.
+/// The rendered view of one Markdown or HTML buffer, kept alive with its tab so
+/// switching back and forth is instant.
 ///
-/// The page is HTML from `MarkdownHTMLRenderer`, styled to match the editor and drawn
-/// on a transparent background so the glass card shows through. Scripts in the
+/// A Markdown page is HTML from `MarkdownHTMLRenderer`, styled to match the editor and
+/// drawn on a transparent background so the glass card shows through. Scripts in the
 /// document itself never run; Silica's own small script (scroll position, double-click)
 /// runs in a separate script world. Relative images load from disk through the
 /// `silica-preview:` scheme, links to project files open in Silica, and web links open
 /// in the browser.
+///
+/// An HTML file is shown as a browser would show it: on its own background, with its
+/// scripts running and the keyboard going to the page. It loads as a `file:` page, so
+/// WebKit's rules for local files apply, as in Safari: the page can load the images,
+/// styles and scripts around it, but its scripts can't read local files. The
+/// `silica-preview:` scheme, which serves any file, isn't used for it.
 final class MarkdownPreview: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
+    enum Format {
+        case markdown
+        case html
+
+        /// The format a file previews as, if it has a preview.
+        init?(url: URL) {
+            if SyntaxLanguage(url: url) == .markdown {
+                self = .markdown
+            } else if ["html", "htm", "xhtml"].contains(url.pathExtension.lowercased()) {
+                // Not every file highlighted as HTML (Vue, Svelte) is a page.
+                self = .html
+            } else {
+                return nil
+            }
+        }
+
+        /// What the editor shows instead of the preview, e.g. "Show Markdown".
+        var sourceName: String {
+            switch self {
+            case .markdown: "Markdown"
+            case .html: "HTML"
+            }
+        }
+    }
+
     let webView: PreviewWebView
+    let format: Format
 
     /// Opens another file in the project (a link to it was clicked).
     var onOpenFile: ((URL) -> Void)?
@@ -23,28 +55,48 @@ final class MarkdownPreview: NSObject, WKNavigationDelegate, WKScriptMessageHand
     var onType: ((String) -> Void)?
 
     private let fileURL: URL
+    /// The folder an HTML page may load files from.
+    private let readAccessURL: URL
     private var pendingLine: Int?
+    /// HTML to show once the web content process may read `readAccessURL` (see `show(html:)`).
+    private var pendingHTML: String?
+    /// Where to scroll an HTML page to once it has loaded.
+    private var pendingScroll: CGPoint?
+    /// The web content process has been given access to `readAccessURL`, which it
+    /// keeps until it exits.
+    private var hasReadAccess = false
     private var baseURL: URL {
         URL(string: Self.scheme + "://local" + Self.encodedPath(fileURL.deletingLastPathComponent().path(percentEncoded: false)))!
     }
 
     static let scheme = "silica-preview"
 
-    init(fileURL: URL) {
+    /// `readAccessURL` is the folder an HTML page may load files from, which should
+    /// contain `fileURL`; it defaults to the file's own folder.
+    init(fileURL: URL, format: Format, readAccessURL: URL? = nil) {
         self.fileURL = fileURL
+        self.format = format
+        self.readAccessURL = readAccessURL ?? fileURL.deletingLastPathComponent()
 
         let configuration = WKWebViewConfiguration()
-        configuration.defaultWebpagePreferences.allowsContentJavaScript = false
-        configuration.setURLSchemeHandler(LocalFileSchemeHandler(), forURLScheme: Self.scheme)
-        configuration.userContentController.addUserScript(WKUserScript(
-            source: Self.script, injectionTime: .atDocumentEnd, forMainFrameOnly: true, in: .defaultClient
-        ))
+        switch format {
+        case .markdown:
+            configuration.defaultWebpagePreferences.allowsContentJavaScript = false
+            configuration.setURLSchemeHandler(LocalFileSchemeHandler(), forURLScheme: Self.scheme)
+            configuration.userContentController.addUserScript(WKUserScript(
+                source: Self.script, injectionTime: .atDocumentEnd, forMainFrameOnly: true, in: .defaultClient
+            ))
+        case .html:
+            configuration.defaultWebpagePreferences.allowsContentJavaScript = true
+        }
         webView = PreviewWebView(frame: .zero, configuration: configuration)
         super.init()
+        webView.navigationDelegate = self
 
+        // An HTML page keeps the web view's own background, and the keyboard, as in a browser.
+        guard format == .markdown else { return }
         // Through a weak proxy: the content controller retains its handlers.
         configuration.userContentController.add(WeakScriptHandler(self), contentWorld: .defaultClient, name: "silica")
-        webView.navigationDelegate = self
         webView.underPageBackgroundColor = .clear
         webView.setValue(false, forKey: "drawsBackground")
         webView.onType = { [weak self] characters in self?.onType?(characters) }
@@ -60,11 +112,59 @@ final class MarkdownPreview: NSObject, WKNavigationDelegate, WKScriptMessageHand
         webView.evaluateJavaScript("{ const style = document.querySelector('head > style'); if (style) style.textContent = \(css); }", in: nil, in: .defaultClient) { _ in }
     }
 
+    /// Shows the buffer's current text. `line` is where the editor is scrolled to.
+    func show(source: String, line: Int) {
+        switch format {
+        case .markdown: show(markdown: source, line: line)
+        case .html: show(html: source)
+        }
+    }
+
     /// Renders `markdown` and, once loaded, scrolls to the block nearest `line`.
-    func show(markdown: String, line: Int) {
+    private func show(markdown: String, line: Int) {
         pendingLine = line
         let body = MarkdownHTMLRenderer.render(markdown)
         webView.loadHTMLString(Self.page(body: body), baseURL: baseURL)
+    }
+
+    /// Shows `html` as if it were the file. The text comes from the editor, not the
+    /// disk, so unsaved changes show and it's read in the editor's encoding: WebKit
+    /// takes a file without a `<meta charset>` to be Latin-1.
+    ///
+    /// WebKit only lets an HTML string load local files once the process has been
+    /// given access by loading a file URL. The first time, that's the folder itself,
+    /// which shows nothing and runs nothing, and the page loads once it's done.
+    private func show(html: String) {
+        // Coming back to the same place in the page, as a Markdown preview comes back
+        // to the editor's line. The page is still there from last time, if there was one.
+        webView.evaluateJavaScript("[window.scrollX, window.scrollY]", in: nil, in: .defaultClient) { [weak self] result in
+            guard let self else { return }
+            if let offset = (try? result.get()) as? [Double], offset.count == 2 {
+                pendingScroll = CGPoint(x: offset[0], y: offset[1])
+            }
+            load(html: html)
+        }
+    }
+
+    private func load(html: String) {
+        if pendingHTML != nil {
+            // Still being given access; show this text when it's done instead.
+            pendingHTML = html
+        } else if hasReadAccess {
+            webView.loadHTMLString(html, baseURL: fileURL)
+        } else {
+            hasReadAccess = true
+            pendingHTML = html
+            webView.loadFileURL(readAccessURL, allowingReadAccessTo: readAccessURL)
+        }
+    }
+
+    /// Loads the page that was waiting for access to the folder. Loading the folder
+    /// fails, but the process keeps the access.
+    private func showPendingHTML() {
+        guard let html = pendingHTML else { return }
+        pendingHTML = nil
+        webView.loadHTMLString(html, baseURL: fileURL)
     }
 
     /// The 1-based source line of the first block visible at the top.
@@ -77,9 +177,22 @@ final class MarkdownPreview: NSObject, WKNavigationDelegate, WKScriptMessageHand
     // MARK: WKNavigationDelegate
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        showPendingHTML()
+        if let scroll = pendingScroll, pendingHTML == nil {
+            pendingScroll = nil
+            webView.evaluateJavaScript("window.scrollTo(\(scroll.x), \(scroll.y))", in: nil, in: .defaultClient) { _ in }
+        }
         guard let line = pendingLine else { return }
         pendingLine = nil
         webView.evaluateJavaScript("silica.scrollToLine(\(line))", in: nil, in: .defaultClient) { _ in }
+    }
+
+    func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: any Error) {
+        showPendingHTML()
+    }
+
+    func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: any Error) {
+        showPendingHTML()
     }
 
     func webView(
@@ -91,11 +204,26 @@ final class MarkdownPreview: NSObject, WKNavigationDelegate, WKScriptMessageHand
         // every other navigation is a link and is handled here instead.
         guard let url = navigationAction.request.url,
               navigationAction.targetFrame?.isMainFrame != false,
-              url.absoluteString != baseURL.absoluteString, url.scheme != "about" else {
+              url.absoluteString != baseURL.absoluteString, url.scheme != "about",
+              !loadsInPlace(url) else {
             decisionHandler(.allow)
             return
         }
         decisionHandler(.cancel)
+
+        if format == .html {
+            // Only a click opens anything, not a page's script sending it elsewhere.
+            guard navigationAction.navigationType == .linkActivated else { return }
+            if url.isFileURL {
+                var isDirectory: ObjCBool = false
+                if FileManager.default.fileExists(atPath: url.path(percentEncoded: false), isDirectory: &isDirectory), !isDirectory.boolValue {
+                    onOpenFile?(URL(filePath: url.path(percentEncoded: false)))
+                }
+            } else if ["http", "https", "mailto"].contains(url.scheme?.lowercased()) {
+                NSWorkspace.shared.open(url)
+            }
+            return
+        }
 
         if url.scheme == Self.scheme {
             let path = url.path(percentEncoded: false)
@@ -113,6 +241,24 @@ final class MarkdownPreview: NSObject, WKNavigationDelegate, WKScriptMessageHand
         } else if ["http", "https", "mailto"].contains(url.scheme?.lowercased()) {
             NSWorkspace.shared.open(url)
         }
+    }
+
+    /// For an HTML file: the file itself, or a place in it (`#anchor`), and the folder
+    /// while it's loaded to give the process access.
+    private func loadsInPlace(_ url: URL) -> Bool {
+        guard format == .html, url.isFileURL else { return false }
+        // A folder's URL may or may not end in a slash.
+        func path(_ url: URL) -> String {
+            let path = url.standardizedFileURL.path(percentEncoded: false)
+            return path.count > 1 && path.hasSuffix("/") ? String(path.dropLast()) : path
+        }
+        return path(url) == path(fileURL) || (pendingHTML != nil && path(url) == path(readAccessURL))
+    }
+
+    func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+        // A new process starts without the access the old one was given.
+        hasReadAccess = false
+        pendingHTML = nil
     }
 
     // MARK: WKScriptMessageHandler
@@ -226,15 +372,16 @@ final class MarkdownPreview: NSObject, WKNavigationDelegate, WKScriptMessageHand
     """
 }
 
-/// The preview's web view: printable keys hand control back to the editor.
+/// The preview's web view: printable keys hand control back to the editor, when
+/// `onType` is set.
 final class PreviewWebView: WKWebView {
     var onType: ((String) -> Void)?
 
     override func keyDown(with event: NSEvent) {
         let modifiers = event.modifierFlags.intersection([.command, .control])
-        if modifiers.isEmpty, let characters = event.characters, !characters.isEmpty,
+        if let onType, modifiers.isEmpty, let characters = event.characters, !characters.isEmpty,
            characters.unicodeScalars.allSatisfy({ !CharacterSet.whitespacesAndNewlines.contains($0) && !CharacterSet.controlCharacters.contains($0) && $0.value < 0xF700 }) {
-            onType?(characters)
+            onType(characters)
             return
         }
         // Space, arrows and page keys keep scrolling the preview.
