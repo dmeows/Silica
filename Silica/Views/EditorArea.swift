@@ -471,7 +471,7 @@ private struct BufferView: View {
         case .image(let file):
             ImagePreview(file: file)
         case .pdf(let file):
-            PDFPreview(file: file)
+            PDFPreview(file: file, name: buffer.name)
         case .binary:
             ContentUnavailableView(
                 "Binary File",
@@ -618,29 +618,72 @@ private struct Checkerboard: View {
 // MARK: - PDF
 
 /// Shows a PDF's pages in the editor card, with its page count and size over the
-/// corner where text files have their status bar.
+/// corner where text files have their status bar. A password-protected PDF asks
+/// for its password first.
 private struct PDFPreview: View {
     let file: EditorBuffer.PDFFile
+    let name: String
 
     var body: some View {
-        PDFViewHost(pdfView: file.view)
-            .overlay(alignment: .bottomTrailing) {
-                Text(details)
-                    .font(.caption)
-                    .monospacedDigit()
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 4)
-                    .glassEffect(.regular, in: .capsule)
-                    .fixedSize()
-                    .padding(4)
-            }
+        if file.isLocked {
+            PDFPasswordPrompt(file: file, name: name)
+                // Each locked tab keeps its own half-typed password.
+                .id(ObjectIdentifier(file))
+        } else {
+            PDFViewHost(pdfView: file.view)
+                .overlay(alignment: .bottomTrailing) {
+                    Text(details)
+                        .font(.caption)
+                        .monospacedDigit()
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 4)
+                        .glassEffect(.regular, in: .capsule)
+                        .fixedSize()
+                        .padding(4)
+                }
+        }
     }
 
     private var details: String {
         let pages = file.pageCount == 1 ? "1 page" : "\(file.pageCount) pages"
         return [pages, file.byteCount.formatted(.byteCount(style: .file))].joined(separator: "  ·  ")
+    }
+}
+
+/// Stands in for a protected PDF's pages until the right password is entered.
+private struct PDFPasswordPrompt: View {
+    let file: EditorBuffer.PDFFile
+    let name: String
+
+    @State private var password = ""
+    @State private var wasRejected = false
+    @FocusState private var isFocused: Bool
+
+    var body: some View {
+        ContentUnavailableView {
+            Label("Password Required", systemImage: "lock.doc")
+        } description: {
+            Text(wasRejected ? "That password didn’t unlock “\(name)”." : "“\(name)” is password-protected.")
+        } actions: {
+            HStack {
+                SecureField("Password", text: $password)
+                    .textFieldStyle(.roundedBorder)
+                    .frame(width: 200)
+                    .focused($isFocused)
+                    .onSubmit(unlock)
+                Button("Unlock", action: unlock)
+                    .disabled(password.isEmpty)
+            }
+        }
+        .onAppear { isFocused = true }
+    }
+
+    private func unlock() {
+        guard !password.isEmpty else { return }
+        wasRejected = !file.unlock(with: password)
+        if wasRejected { password = "" }
     }
 }
 

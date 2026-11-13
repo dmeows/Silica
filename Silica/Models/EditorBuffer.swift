@@ -69,10 +69,39 @@ final class EditorBuffer: Identifiable {
 
     /// A PDF shown read-only in the editor card. The tab owns the view, so it keeps
     /// its place and zoom while other tabs are shown.
-    struct PDFFile {
+    @Observable
+    final class PDFFile {
         let view: PDFView
-        let pageCount: Int
         let byteCount: Int64
+        /// A password-protected PDF has no pages to show until it's unlocked.
+        private(set) var isLocked: Bool
+        private(set) var pageCount: Int
+        private let document: PDFDocument
+
+        init(document: PDFDocument, byteCount: Int64) {
+            self.document = document
+            self.byteCount = byteCount
+            isLocked = document.isLocked
+            pageCount = document.pageCount
+            view = PDFView()
+            view.displayMode = .singlePageContinuous
+            // Fits the page width to the card until the reader zooms.
+            view.autoScales = true
+            // The pages lie on the card's glass, like images do.
+            view.backgroundColor = .clear
+            // The view gets a locked document only once it's unlocked, so what a
+            // protected PDF shows is Silica's own prompt and never an empty card.
+            if !document.isLocked { view.document = document }
+        }
+
+        /// Returns whether the password was right; the pages show once it is.
+        func unlock(with password: String) -> Bool {
+            guard document.unlock(withPassword: password) else { return false }
+            view.document = document
+            pageCount = document.pageCount
+            isLocked = false
+            return true
+        }
     }
 
     private static let maxFileSize: Int64 = 20 * 1024 * 1024
@@ -399,15 +428,7 @@ final class EditorBuffer: Identifiable {
     }
 
     private static func loadPDF(_ url: URL, byteCount: Int64) -> PDFFile? {
-        guard let document = PDFDocument(url: url) else { return nil }
-        let view = PDFView()
-        view.document = document
-        view.displayMode = .singlePageContinuous
-        // Fits the page width to the card until the reader zooms.
-        view.autoScales = true
-        // The pages lie on the card's glass, like images do.
-        view.backgroundColor = .clear
-        return PDFFile(view: view, pageCount: document.pageCount, byteCount: byteCount)
+        PDFDocument(url: url).map { PDFFile(document: $0, byteCount: byteCount) }
     }
 
     private static func looksBinary(_ data: Data) -> Bool {
