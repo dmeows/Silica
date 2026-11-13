@@ -259,6 +259,7 @@ final class EditorBuffer: Identifiable {
         } else if format == .html {
             // A page has no source lines to match, so the editor stays where it was.
             isShowingPreview = false
+            preview?.unloadPage()
         } else if let editLine {
             isShowingPreview = false
             DispatchQueue.main.async { controller.scroll(toLine: editLine, placingCursor: true) }

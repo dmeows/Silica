@@ -36,15 +36,22 @@ final class DocumentPreview: NSObject, WKNavigationDelegate, WKScriptMessageHand
     private var renderTask: Task<Void, Never>?
     /// HTML to show once the web content process may read `readAccessURL` (see `show(html:)`).
     private var pendingHTML: String?
-    /// Where to scroll an HTML page to once it has loaded.
-    private var pendingScroll: CGPoint?
-    /// Silica has just asked for the editor's text to load as the page. That load
-    /// is the only one at the page's own URL that's let through, so a self-link,
-    /// form or script can't swap the page for the file on disk.
-    private var isLoadingPage = false
+    /// The load that gives the web content process access to `readAccessURL`.
+    private var accessNavigation: WKNavigation?
     /// The web content process has been given access to `readAccessURL`, which it
     /// keeps until it exits.
     private var hasReadAccess = false
+    /// The last load of the editor's text as the HTML page.
+    private var pageNavigation: WKNavigation?
+    /// `pageNavigation` has been asked for and hasn't committed yet. Only then may the
+    /// page's own URL load, so a self-link, form or script can't swap the page for the
+    /// file on disk.
+    private var isStartingPage = false
+    /// Where to scroll an HTML page to once it has loaded.
+    private var pendingScroll: CGPoint?
+    /// Where an HTML page was scrolled to when it was taken down (see `unloadPage()`).
+    private var savedScroll: CGPoint?
+    private var isUnloaded = false
     private var baseURL: URL {
         URL(string: Self.scheme + "://local" + Self.encodedPath(fileURL.deletingLastPathComponent().path(percentEncoded: false)))!
     }
@@ -118,17 +125,45 @@ final class DocumentPreview: NSObject, WKNavigationDelegate, WKScriptMessageHand
     /// takes a file without a `<meta charset>` to be Latin-1.
     ///
     /// WebKit only lets an HTML string load local files once the process has been
-    /// given access by loading a file URL. The first time, that's the folder itself,
-    /// which shows nothing and runs nothing, and the page loads once it's done.
+    /// given access by loading a file URL, and only a load that gets as far as showing
+    /// the file gives access to the whole of `readAccessURL`. So the first time, the
+    /// file itself is loaded from disk with its scripts off, and the editor's text
+    /// takes its place as soon as that's begun.
     private func show(html: String) {
+        isUnloaded = false
         // Coming back to the same place in the page, as a Markdown preview comes back
-        // to the editor's line. The page is still there from last time, if there was one.
-        webView.evaluateJavaScript("[window.scrollX, window.scrollY]", in: nil, in: .defaultClient) { [weak self] result in
-            guard let self else { return }
-            if let offset = (try? result.get()) as? [Double], offset.count == 2 {
-                pendingScroll = CGPoint(x: offset[0], y: offset[1])
-            }
+        // to the editor's line.
+        scrollPosition { [weak self] position in
+            // Not if the source was shown again in the meantime.
+            guard let self, !isUnloaded else { return }
+            // A place the page hasn't got to yet, or had when it was taken down,
+            // comes before where it is now.
+            pendingScroll = pendingScroll ?? savedScroll ?? position
+            savedScroll = nil
             load(html: html)
+        }
+    }
+
+    /// Takes an HTML page down while the source is showing, so its scripts, timers,
+    /// sound and video don't carry on unseen. `show(_:line:)` brings it back from the
+    /// editor's text, at the same place.
+    func unloadPage() {
+        guard format == .html, !isUnloaded else { return }
+        isUnloaded = true
+        scrollPosition { [weak self] position in
+            // Not if the preview was shown again in the meantime.
+            guard let self, isUnloaded else { return }
+            savedScroll = pendingScroll ?? savedScroll ?? position
+            pendingScroll = nil
+            // An empty page at the same address, which the process may already load.
+            load(html: "")
+        }
+    }
+
+    private func scrollPosition(_ completion: @escaping (CGPoint?) -> Void) {
+        webView.evaluateJavaScript("[window.scrollX, window.scrollY]", in: nil, in: .defaultClient) { result in
+            let offset = (try? result.get()) as? [Double]
+            completion(offset.flatMap { $0.count == 2 ? CGPoint(x: $0[0], y: $0[1]) : nil })
         }
     }
 
@@ -141,21 +176,30 @@ final class DocumentPreview: NSObject, WKNavigationDelegate, WKScriptMessageHand
         } else {
             hasReadAccess = true
             pendingHTML = html
-            webView.loadFileURL(readAccessURL, allowingReadAccessTo: readAccessURL)
+            accessNavigation = webView.loadFileURL(fileURL, allowingReadAccessTo: readAccessURL)
         }
     }
 
     private func loadPage(_ html: String) {
-        isLoadingPage = true
-        webView.loadHTMLString(html, baseURL: fileURL)
+        isStartingPage = true
+        pageNavigation = webView.loadHTMLString(html, baseURL: fileURL)
     }
 
-    /// Loads the page that was waiting for access to the folder. Loading the folder
-    /// fails, but the process keeps the access.
+    /// Loads the page that was waiting for access to the folder.
     private func showPendingHTML() {
         guard let html = pendingHTML else { return }
         pendingHTML = nil
+        accessNavigation = nil
         loadPage(html)
+    }
+
+    /// The file couldn't be loaded from disk (it's gone, say), so the process has no
+    /// access. The page still shows, without the files around it, and the next time
+    /// asks again.
+    private func accessDidFail(_ navigation: WKNavigation) {
+        guard navigation === accessNavigation else { return }
+        hasReadAccess = false
+        showPendingHTML()
     }
 
     /// The 1-based source line of the first block visible at the top.
@@ -168,39 +212,58 @@ final class DocumentPreview: NSObject, WKNavigationDelegate, WKScriptMessageHand
     // MARK: WKNavigationDelegate
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-        showPendingHTML()
-        if let scroll = pendingScroll, pendingHTML == nil {
-            pendingScroll = nil
-            webView.evaluateJavaScript("window.scrollTo(\(scroll.x), \(scroll.y))", in: nil, in: .defaultClient) { _ in }
+        if format == .html {
+            if navigation === pageNavigation, let scroll = pendingScroll {
+                pendingScroll = nil
+                webView.evaluateJavaScript("window.scrollTo(\(scroll.x), \(scroll.y))", in: nil, in: .defaultClient) { _ in }
+            }
+            return
         }
         guard let line = pendingLine else { return }
         pendingLine = nil
         webView.evaluateJavaScript("silica.scrollToLine(\(line))", in: nil, in: .defaultClient) { _ in }
     }
 
+    func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
+        if navigation === accessNavigation {
+            // The process has its access; no need to show the file as it is on disk.
+            showPendingHTML()
+        } else if navigation === pageNavigation {
+            // From here the page's own scripts run, and may not load its URL again.
+            isStartingPage = false
+        }
+    }
+
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: any Error) {
-        showPendingHTML()
+        if navigation === pageNavigation { isStartingPage = false }
+        accessDidFail(navigation)
     }
 
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: any Error) {
-        showPendingHTML()
+        // A load that a newer one took over from fails here too; the newer one is
+        // still starting.
+        if navigation === pageNavigation { isStartingPage = false }
+        accessDidFail(navigation)
     }
 
     func webView(
         _ webView: WKWebView,
         decidePolicyFor navigationAction: WKNavigationAction,
-        decisionHandler: @escaping @MainActor (WKNavigationActionPolicy) -> Void
+        preferences: WKWebpagePreferences,
+        decisionHandler: @escaping @MainActor (WKNavigationActionPolicy, WKWebpagePreferences) -> Void
     ) {
         // Only the page itself loads in place (and subframes, e.g. an embedded video);
         // every other navigation is a link and is handled here instead.
         guard let url = navigationAction.request.url,
               navigationAction.targetFrame?.isMainFrame != false,
               url.absoluteString != baseURL.absoluteString, url.scheme != "about",
-              !loadsInPlace(url) else {
-            decisionHandler(.allow)
+              !loadsInPlace(url, navigationAction.navigationType) else {
+            // The file as it is on disk, loaded for access to its folder, runs nothing.
+            if pendingHTML != nil { preferences.allowsContentJavaScript = false }
+            decisionHandler(.allow, preferences)
             return
         }
-        decisionHandler(.cancel)
+        decisionHandler(.cancel, preferences)
 
         if format == .html {
             // Only a click opens anything, not a page's script sending it elsewhere.
@@ -235,33 +298,28 @@ final class DocumentPreview: NSObject, WKNavigationDelegate, WKScriptMessageHand
         }
     }
 
-    /// For an HTML file: the page Silica is loading, a place in it (`#anchor`), and
-    /// the folder while it's loaded to give the process access. Any other navigation
-    /// to the page itself would load the file from disk, without unsaved edits and
-    /// in the wrong encoding, so it's cancelled with the rest.
-    private func loadsInPlace(_ url: URL) -> Bool {
-        guard format == .html, url.isFileURL else { return false }
-        // A folder's URL may or may not end in a slash.
-        func path(_ url: URL) -> String {
-            let path = url.standardizedFileURL.path(percentEncoded: false)
-            return path.count > 1 && path.hasSuffix("/") ? String(path.dropLast()) : path
-        }
-        if path(url) == path(fileURL), url.query == nil {
-            if isLoadingPage, url.fragment == nil {
-                isLoadingPage = false
-                return true
-            }
-            // A jump within the page, which doesn't reload it.
-            if url.fragment != nil { return true }
-        }
-        return pendingHTML != nil && path(url) == path(readAccessURL)
+    /// For an HTML file: the page while Silica is loading it, and a place in it
+    /// (`#anchor`). Any other navigation to the page itself would load the file from
+    /// disk, without unsaved edits and in the wrong encoding, so it's cancelled with
+    /// the rest.
+    private func loadsInPlace(_ url: URL, _ type: WKNavigationType) -> Bool {
+        guard format == .html, url.isFileURL, url.query == nil,
+              url.standardizedFileURL.path(percentEncoded: false) == fileURL.standardizedFileURL.path(percentEncoded: false) else { return false }
+        // A jump within the page, which doesn't reload it.
+        if url.fragment != nil { return true }
+        // Silica's own loads, which are neither a reload, a link nor a form: the file
+        // from disk for access, then the editor's text. That one is let through for
+        // as long as it's starting, not once: when two loads follow closely, either's
+        // check may come first, or only the second's.
+        return type == .other && (pendingHTML != nil || isStartingPage)
     }
 
     func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
         // A new process starts without the access the old one was given.
         hasReadAccess = false
         pendingHTML = nil
-        isLoadingPage = false
+        accessNavigation = nil
+        isStartingPage = false
     }
 
     // MARK: WKScriptMessageHandler
