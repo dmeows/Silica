@@ -26,6 +26,8 @@ Silica needs macOS 26 or later.
 - **Nine color themes**, each with a light and a dark palette: Atom One, GitHub,
   Xcode, Solarized, Catppuccin, Gruvbox, Tokyo Night, Rosé Pine and Dracula.
 - **Markdown preview**, with highlighted code blocks.
+- **CSV preview.** See `.csv` and `.tsv` files as a table, and double-click a row to
+  edit it.
 - **Editing tools.** Tabs, line numbers, indent guides, a minimap, word wrap, go to
   line, toggle comment, and moving or duplicating lines.
 - **Picks up where you left off.** Projects reopen their tabs, and recent projects
@@ -41,7 +43,7 @@ Silica needs macOS 26 or later.
 | ⇧⌘F | Find in Project |
 | ⌥⌘J | Filter files in the tree |
 | ⌘L | Go to Line |
-| ⇧⌘V | Toggle Markdown preview |
+| ⇧⌘V | Toggle Markdown or CSV preview |
 | ⌃⌘S | Show or hide the sidebar |
 | ⌘/ | Toggle comment |
 | ⌥↑ / ⌥↓ | Move lines up or down |

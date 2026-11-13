@@ -41,11 +41,12 @@ final class EditorBuffer: Identifiable {
     var cursor = CursorStatus()
     var indentation = EditorTextView.Indentation(usesTabs: false, width: 4)
 
-    /// Markdown files can switch between their source and a rendered preview.
-    private(set) var isMarkdown: Bool
+    /// Markdown and CSV files can switch between their source and a rendered preview;
+    /// `nil` for every other kind of file.
+    private(set) var previewFormat: PreviewFormat?
     private(set) var isShowingPreview = false
     /// Created the first time the preview is shown, then kept with the tab.
-    @ObservationIgnored private(set) var preview: MarkdownPreview?
+    @ObservationIgnored private(set) var preview: DocumentPreview?
     /// Opens a project file a preview link points to.
     @ObservationIgnored var openFile: ((URL) -> Void)?
 
@@ -72,7 +73,6 @@ final class EditorBuffer: Identifiable {
     init(untitledName name: String) {
         url = URL.untitled(name)
         isUntitled = true
-        isMarkdown = false
         encoding = .utf8
         let controller = TextController(text: "", language: nil)
         content = .text(controller)
@@ -90,7 +90,7 @@ final class EditorBuffer: Identifiable {
     init(url: URL) {
         self.url = url
         isUntitled = false
-        self.isMarkdown = SyntaxLanguage(url: url) == .markdown
+        previewFormat = PreviewFormat(url: url)
 
         // From the file system, not URL's resource cache, which can be stale when a
         // changed file is opened again.
@@ -173,17 +173,18 @@ final class EditorBuffer: Identifiable {
     /// new location (and language, if the extension changed).
     func move(to newURL: URL) {
         url = newURL
-        let newLanguage = SyntaxLanguage(url: newURL)
-        isMarkdown = newLanguage == .markdown
-        // The preview resolves images relative to the old place; make a new one when needed.
-        isShowingPreview = isShowingPreview && isMarkdown
+        let newFormat = PreviewFormat(url: newURL)
+        previewFormat = newFormat
+        // The preview resolves images relative to the old place, and renders the old
+        // format; make a new one when needed.
+        isShowingPreview = isShowingPreview && newFormat != nil
         preview = nil
-        if isShowingPreview, let controller = textController {
-            let preview = makePreview(for: controller)
+        if isShowingPreview, let newFormat, let controller = textController {
+            let preview = makePreview(for: controller, format: newFormat)
             self.preview = preview
-            preview.show(markdown: controller.textView.string, line: controller.topVisibleLine())
+            preview.show(controller.textView.string, line: controller.topVisibleLine())
         }
-        textController?.setLanguage(newLanguage)
+        textController?.setLanguage(SyntaxLanguage(url: newURL))
     }
 
     /// Writes the text to another file (Save As), leaving this buffer as it is.
@@ -195,7 +196,7 @@ final class EditorBuffer: Identifiable {
         try data.write(to: destination.resolvingSymlinksInPath(), options: .atomic)
     }
 
-    // MARK: Markdown preview
+    // MARK: Preview
 
     func togglePreview() {
         setShowingPreview(!isShowingPreview)
@@ -204,11 +205,11 @@ final class EditorBuffer: Identifiable {
     /// Switches between source and preview, keeping roughly the same place in the
     /// document. `editLine` (from a double-click) puts the cursor on that source line.
     func setShowingPreview(_ show: Bool, editLine: Int? = nil) {
-        guard isMarkdown, let controller = textController, show != isShowingPreview else { return }
+        guard let format = previewFormat, let controller = textController, show != isShowingPreview else { return }
         if show {
-            let preview = self.preview ?? makePreview(for: controller)
+            let preview = self.preview ?? makePreview(for: controller, format: format)
             self.preview = preview
-            preview.show(markdown: controller.textView.string, line: controller.topVisibleLine())
+            preview.show(controller.textView.string, line: controller.topVisibleLine())
             isShowingPreview = true
         } else if let editLine {
             isShowingPreview = false
@@ -221,8 +222,8 @@ final class EditorBuffer: Identifiable {
         }
     }
 
-    private func makePreview(for controller: TextController) -> MarkdownPreview {
-        let preview = MarkdownPreview(fileURL: url)
+    private func makePreview(for controller: TextController, format: PreviewFormat) -> DocumentPreview {
+        let preview = DocumentPreview(fileURL: url, format: format)
         preview.onOpenFile = { [weak self] url in self?.openFile?(url) }
         preview.onEditLine = { [weak self] line in self?.setShowingPreview(false, editLine: line) }
         preview.onType = { [weak self] characters in
@@ -312,7 +313,7 @@ final class EditorBuffer: Identifiable {
         isMissingOnDisk = false
         if isShowingPreview, let preview {
             preview.topVisibleLine { line in
-                preview.show(markdown: controller.textView.string, line: line)
+                preview.show(controller.textView.string, line: line)
             }
         }
     }
