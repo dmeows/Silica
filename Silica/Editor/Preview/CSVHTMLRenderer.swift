@@ -8,7 +8,7 @@ import Foundation
 nonisolated enum CSVHTMLRenderer {
     /// Cells rendered before the table is cut short. A web view lays a table out all
     /// at once, and slows down long before a file reaches the editor's size limit.
-    static let maxCells = 200_000
+    static let maxCells = 100_000
 
     /// `delimiter` is `nil` to tell commas, semicolons and tabs apart from the first row.
     static func render(_ text: String, delimiter: Character? = nil) -> String {
@@ -34,9 +34,11 @@ nonisolated enum CSVHTMLRenderer {
             var html = ""
             for column in 0..<columnCount {
                 let field = column < fields.count ? fields[column] : ""
-                html += numericColumns[column] ? "<\(tag) class=\"num\">" : "<\(tag)>"
+                // In a div, which is what cuts a long field short: `max-width` isn't
+                // defined for table cells themselves.
+                html += numericColumns[column] ? "<\(tag) class=\"num\"><div>" : "<\(tag)><div>"
                 html += MarkdownHTMLRenderer.escape(field)
-                html += "</\(tag)>"
+                html += "</div></\(tag)>"
             }
             return html
         }
@@ -117,8 +119,8 @@ nonisolated struct CSVTable {
     private static let semicolon = UInt16(UInt8(ascii: ";"))
     private static let tab = UInt16(UInt8(ascii: "\t"))
 
-    /// `delimiter` is a UTF-16 code unit, or `nil` to detect it. Parsing stops keeping
-    /// rows once they hold `maxCells` fields, but goes on counting them.
+    /// `delimiter` is a UTF-16 code unit, or `nil` to detect it. Once the rows kept
+    /// hold `maxCells` fields, the rest are only counted, without building their fields.
     init(parsing text: String, delimiter: UInt16?, maxCells: Int) {
         // In UTF-16, so lines are counted as the editor counts them. The delimiter,
         // quote and line breaks are each one unit, never part of another character.
@@ -130,8 +132,10 @@ nonisolated struct CSVTable {
         var fields: [String] = []
         var field: [UInt16] = []
         var isInQuotes = false
-        // The field opened with a quote, so it counts as one even when it's empty.
-        var isFieldQuoted = false
+        // Nothing of the field has been read yet: a quote here opens a quoted field.
+        var isAtFieldStart = true
+        // The line has something on it, if only an empty quoted field or a delimiter.
+        var rowHasContent = false
         var cellCount = 0
         var line = 1
         var rowLine = 1
@@ -141,16 +145,18 @@ nonisolated struct CSVTable {
             let isAtEnd = index == units.count
             let unit = isAtEnd ? Self.lineFeed : units[index]
             index += 1
+            // Rows end up kept or counted whole: the cell count only changes between them.
+            let isKept = cellCount < maxCells
 
             if isInQuotes, !isAtEnd {
                 if unit != Self.quote {
-                    field.append(unit)
+                    if isKept { field.append(unit) }
                     // The quote that opened the field is before it, so there is a unit to look back at.
                     if Self.isLineBreak(unit), !(unit == Self.lineFeed && units[index - 2] == Self.carriageReturn) {
                         line += 1
                     }
                 } else if index < units.count, units[index] == Self.quote {
-                    field.append(Self.quote)
+                    if isKept { field.append(Self.quote) }
                     index += 1
                 } else {
                     isInQuotes = false
@@ -159,25 +165,30 @@ nonisolated struct CSVTable {
             }
 
             switch unit {
-            case Self.quote where field.isEmpty && !isFieldQuoted:
+            case Self.quote where isAtFieldStart:
                 isInQuotes = true
-                isFieldQuoted = true
+                isAtFieldStart = false
+                rowHasContent = true
             case delimiter:
-                fields.append(String(decoding: field, as: UTF16.self))
-                field.removeAll(keepingCapacity: true)
-                isFieldQuoted = false
-            case Self.lineFeed, Self.carriageReturn:
-                if !fields.isEmpty || !field.isEmpty || isFieldQuoted {
+                if isKept {
                     fields.append(String(decoding: field, as: UTF16.self))
+                    field.removeAll(keepingCapacity: true)
+                }
+                isAtFieldStart = true
+                rowHasContent = true
+            case Self.lineFeed, Self.carriageReturn:
+                if rowHasContent {
                     rowCount += 1
-                    if cellCount < maxCells {
+                    if isKept {
+                        fields.append(String(decoding: field, as: UTF16.self))
                         cellCount += fields.count
                         rows.append(Row(line: rowLine, fields: fields))
+                        fields = []
+                        field.removeAll(keepingCapacity: true)
                     }
-                    fields = []
-                    field.removeAll(keepingCapacity: true)
-                    isFieldQuoted = false
                 }
+                isAtFieldStart = true
+                rowHasContent = false
                 // CRLF is one line break.
                 if unit == Self.carriageReturn, index < units.count, units[index] == Self.lineFeed {
                     index += 1
@@ -185,7 +196,9 @@ nonisolated struct CSVTable {
                 line += 1
                 rowLine = line
             default:
-                field.append(unit)
+                if isKept { field.append(unit) }
+                isAtFieldStart = false
+                rowHasContent = true
                 // A Unicode line separator: a new line in the editor, but not a new row.
                 if Self.isLineBreak(unit) { line += 1 }
             }

@@ -25,6 +25,7 @@ final class DocumentPreview: NSObject, WKNavigationDelegate, WKScriptMessageHand
     private let fileURL: URL
     private let format: PreviewFormat
     private var pendingLine: Int?
+    private var renderTask: Task<Void, Never>?
     private var baseURL: URL {
         URL(string: Self.scheme + "://local" + Self.encodedPath(fileURL.deletingLastPathComponent().path(percentEncoded: false)))!
     }
@@ -64,9 +65,19 @@ final class DocumentPreview: NSObject, WKNavigationDelegate, WKScriptMessageHand
 
     /// Renders the file's `text` and, once loaded, scrolls to the block nearest `line`.
     func show(_ text: String, line: Int) {
-        pendingLine = line
-        let body = format.html(for: text)
-        webView.loadHTMLString(Self.page(body: body, isTable: format.isTable), baseURL: baseURL)
+        // Off the main actor, as a large file takes a while to turn into HTML. A newer
+        // call takes over from one that is still rendering.
+        renderTask?.cancel()
+        renderTask = Task { [weak self, format] in
+            let body = await Task.detached(priority: .userInitiated) {
+                format.html(for: text)
+            }.value
+            guard let self, !Task.isCancelled else { return }
+            // Set with the load it belongs to, not before: a page still loading from
+            // an earlier call would take it when it finishes.
+            self.pendingLine = line
+            self.webView.loadHTMLString(Self.page(body: body, isTable: format.isTable), baseURL: self.baseURL)
+        }
     }
 
     /// The 1-based source line of the first block visible at the top.
@@ -200,7 +211,8 @@ final class DocumentPreview: NSObject, WKNavigationDelegate, WKScriptMessageHand
            ones don't move with a sticky row. */
         .csv article { max-width: none; width: max-content; margin: 0; padding: 16px 20px 40px; }
         .csv table { display: table; overflow: visible; border-collapse: separate; border-spacing: 0; font-size: 0.92em; line-height: 1.45; }
-        .csv th, .csv td { border-width: 0 1px 1px 0; padding: 5px 12px; vertical-align: top; white-space: pre; max-width: 32em; overflow: hidden; text-overflow: ellipsis; }
+        .csv th, .csv td { border-width: 0 1px 1px 0; padding: 5px 12px; vertical-align: top; }
+        .csv th > div, .csv td > div { max-width: 32em; overflow: hidden; text-overflow: ellipsis; white-space: pre; }
         .csv tr > :first-child { border-left-width: 1px; }
         .csv th { position: sticky; top: 0; border-top-width: 1px; text-align: left; background: rgba(244, 244, 245, 0.94); -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px); }
         .csv .num { text-align: right; font-variant-numeric: tabular-nums; }
