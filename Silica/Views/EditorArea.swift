@@ -1,3 +1,4 @@
+import PDFKit
 import SwiftUI
 
 struct EditorArea: View {
@@ -13,8 +14,8 @@ struct EditorArea: View {
                 }
                 EditorTabBar(workspace: workspace)
                 Spacer(minLength: 0)
-                if let buffer = workspace.activeBuffer, buffer.canPreview {
-                    PreviewModeToggle(buffer: buffer)
+                if let buffer = workspace.activeBuffer, let format = buffer.previewFormat {
+                    PreviewModeToggle(buffer: buffer, format: format)
                         .padding(.trailing, WorkspaceLayout.cardInset + 4)
                 }
             }
@@ -133,6 +134,11 @@ private struct EditorTabBar: View {
             // A tab scrolled part of the way out fades away rather than ending in a cut.
             .mask { fadeMask }
             .background(WheelScrollsSideways())
+            .background(
+                MiddleClickClosesTab(tab: tab(at:)) { url in
+                    withAnimation(.snappy) { workspace.closeTab(url) }
+                }
+            )
             .coordinateSpace(Self.space)
             .onChange(of: workspace.activeTab) { _, active in
                 if let active {
@@ -239,6 +245,20 @@ private struct EditorTabBar: View {
         scrollOffset = target
     }
 
+    /// The tab at a horizontal position in the bar, if there's one: the gaps between
+    /// tabs and the empty end of the row have none.
+    private func tab(at x: CGFloat) -> URL? {
+        // The tabs are out of their places during a drag.
+        guard drag == nil else { return nil }
+        var leading = Self.inset - scrollOffset
+        for url in workspace.openTabs {
+            let width = tabWidths[url] ?? 0
+            if x >= leading && x < leading + width { return url }
+            leading += width + Self.spacing
+        }
+        return nil
+    }
+
     /// Where the dragged tab would land if dropped now, and how far each tab sits from
     /// its place in the row meanwhile: the dragged one follows the pointer, and the
     /// tabs it has passed step aside by its width. The order itself changes on drop.
@@ -313,6 +333,71 @@ private struct WheelScrollsSideways: NSViewRepresentable {
         func stopWatching() {
             if let monitor { NSEvent.removeMonitor(monitor) }
             monitor = nil
+        }
+    }
+}
+
+/// Closes the tab that the middle mouse button is clicked on, as browsers and other
+/// editors do. SwiftUI has no gesture for that button, so the bar watches for it.
+private struct MiddleClickClosesTab: NSViewRepresentable {
+    /// The tab at a horizontal position in the bar, if there's one.
+    let tab: (CGFloat) -> URL?
+    let close: (URL) -> Void
+
+    func makeNSView(context: Context) -> AnchorView { AnchorView() }
+
+    func updateNSView(_ nsView: AnchorView, context: Context) {
+        nsView.tab = tab
+        nsView.close = close
+    }
+
+    static func dismantleNSView(_ nsView: AnchorView, coordinator: ()) {
+        nsView.stopWatching()
+    }
+
+    /// Marks where the bar is in its window, behind the row.
+    final class AnchorView: NSView {
+        var tab: (CGFloat) -> URL? = { _ in nil }
+        var close: (URL) -> Void = { _ in }
+
+        private var monitor: Any?
+        /// The tab the button went down on: it closes if the button comes up on it too.
+        private var pressed: URL?
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            stopWatching()
+            guard window != nil else { return }
+            monitor = NSEvent.addLocalMonitorForEvents(matching: [.otherMouseDown, .otherMouseUp]) { [weak self] event in
+                self?.handle(event)
+                return event
+            }
+        }
+
+        func stopWatching() {
+            if let monitor { NSEvent.removeMonitor(monitor) }
+            monitor = nil
+            pressed = nil
+        }
+
+        private func handle(_ event: NSEvent) {
+            // Button 2 is the middle one; a mouse's further buttons are left alone.
+            guard event.buttonNumber == 2 else { return }
+            let point = convert(event.locationInWindow, from: nil)
+            // The view covers the part of the row that shows, so tabs scrolled out
+            // of the bar can't be hit. The monitor sees clicks before the window turns
+            // them away, so a sheet or an alert has to rule them out here.
+            let isBlocked = window?.attachedSheet != nil || NSApp.modalWindow != nil
+            let hit = event.window === window && !isBlocked && bounds.contains(point) ? tab(point.x) : nil
+            if event.type == .otherMouseDown {
+                pressed = hit
+                return
+            }
+            defer { pressed = nil }
+            guard let hit, hit == pressed else { return }
+            // After the event is through: closing a tab with unsaved changes asks
+            // about them in an alert, which shouldn't run inside the monitor.
+            DispatchQueue.main.async { [weak self] in self?.close(hit) }
         }
     }
 }
@@ -456,7 +541,7 @@ private struct BufferView: View {
         switch buffer.content {
         case .text(let controller):
             if buffer.isShowingPreview, let preview = buffer.preview {
-                MarkdownPreviewHost(preview: preview)
+                PreviewHost(preview: preview)
             } else {
                 // The status bar floats over the text's bottom corner rather than
                 // taking a strip of the card, left of the minimap when it's shown.
@@ -469,6 +554,8 @@ private struct BufferView: View {
             }
         case .image(let file):
             ImagePreview(file: file)
+        case .pdf(let file):
+            PDFPreview(file: file, name: buffer.name)
         case .binary:
             ContentUnavailableView(
                 "Binary File",
@@ -528,16 +615,17 @@ private struct StatusBar: View {
     }
 }
 
-// MARK: - Markdown
+// MARK: - Preview
 
-/// Source / Preview switch for Markdown tabs, in the quiet icon style of the other
-/// title bar buttons; the current mode is drawn in the primary color on a soft fill.
+/// Source / Preview switch for Markdown, CSV and HTML tabs, in the quiet icon style of the
+/// other title bar buttons; the current mode is drawn in the primary color on a soft fill.
 private struct PreviewModeToggle: View {
     let buffer: EditorBuffer
+    let format: PreviewFormat
 
     var body: some View {
         HStack(spacing: 2) {
-            option("doc.plaintext", help: "Show \(buffer.previewFormat?.sourceName ?? "Source") (⇧⌘V)", isOn: !buffer.isShowingPreview) {
+            option("doc.plaintext", help: "Show \(format.sourceName) (⇧⌘V)", isOn: !buffer.isShowingPreview) {
                 buffer.setShowingPreview(false)
             }
             option("eye", help: "Show Preview (⇧⌘V)", isOn: buffer.isShowingPreview) {
@@ -608,6 +696,107 @@ private struct Checkerboard: View {
                     context.fill(Path(rect), with: .color(.primary.opacity(0.06)))
                 }
             }
+        }
+    }
+}
+
+// MARK: - PDF
+
+/// Shows a PDF's pages in the editor card, with its page count and size over the
+/// corner where text files have their status bar. A password-protected PDF asks
+/// for its password first.
+private struct PDFPreview: View {
+    let file: EditorBuffer.PDFFile
+    let name: String
+
+    var body: some View {
+        if file.isLocked {
+            PDFPasswordPrompt(file: file, name: name)
+                // Each locked tab keeps its own half-typed password.
+                .id(ObjectIdentifier(file))
+        } else {
+            PDFViewHost(pdfView: file.view)
+                .overlay(alignment: .bottomTrailing) {
+                    Text(details)
+                        .font(.caption)
+                        .monospacedDigit()
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 4)
+                        .glassEffect(.regular, in: .capsule)
+                        .fixedSize()
+                        .padding(4)
+                }
+        }
+    }
+
+    private var details: String {
+        let pages = file.pageCount == 1 ? "1 page" : "\(file.pageCount) pages"
+        return [pages, file.byteCount.formatted(.byteCount(style: .file))].joined(separator: "  ·  ")
+    }
+}
+
+/// Stands in for a protected PDF's pages until the right password is entered.
+private struct PDFPasswordPrompt: View {
+    let file: EditorBuffer.PDFFile
+    let name: String
+
+    @State private var password = ""
+    @State private var wasRejected = false
+    @FocusState private var isFocused: Bool
+
+    var body: some View {
+        ContentUnavailableView {
+            Label("Password Required", systemImage: "lock.doc")
+        } description: {
+            Text(wasRejected ? "That password didn’t unlock “\(name)”." : "“\(name)” is password-protected.")
+        } actions: {
+            HStack {
+                SecureField("Password", text: $password)
+                    .textFieldStyle(.roundedBorder)
+                    .frame(width: 200)
+                    .focused($isFocused)
+                    .onSubmit(unlock)
+                Button("Unlock", action: unlock)
+                    .disabled(password.isEmpty)
+            }
+        }
+        .onAppear { isFocused = true }
+    }
+
+    private func unlock() {
+        guard !password.isEmpty else { return }
+        wasRejected = !file.unlock(with: password)
+        if wasRejected { password = "" }
+    }
+}
+
+/// Hosts whichever PDF tab's view is active.
+private struct PDFViewHost: NSViewRepresentable {
+    let pdfView: PDFView
+
+    func makeNSView(context: Context) -> NSView {
+        let container = NSView()
+        attach(to: container)
+        return container
+    }
+
+    func updateNSView(_ container: NSView, context: Context) {
+        if pdfView.superview !== container {
+            container.subviews.forEach { $0.removeFromSuperview() }
+            attach(to: container)
+        }
+    }
+
+    private func attach(to container: NSView) {
+        pdfView.removeFromSuperview()
+        pdfView.frame = container.bounds
+        pdfView.autoresizingMask = [.width, .height]
+        container.addSubview(pdfView)
+        // So the arrow keys, Page Up and Page Down scroll it straight away.
+        DispatchQueue.main.async { [pdfView] in
+            pdfView.window?.makeFirstResponder(pdfView)
         }
     }
 }

@@ -12,6 +12,13 @@ struct AppCommands: Commands {
     private var settings: EditorSettings { .shared }
     private var opener: ProjectOpener { ProjectOpener(openWindow: openWindow) }
 
+    /// "Show Markdown", "Show CSV" or "Show HTML" while the preview is up, to go back to the source.
+    private var previewToggleTitle: String {
+        guard let buffer = workspace?.activeBuffer, buffer.isShowingPreview,
+              let format = buffer.previewFormat else { return "Show Preview" }
+        return "Show \(format.sourceName)"
+    }
+
     var body: some Commands {
         // Lets Finder's open requests at launch open windows before any exists.
         let _ = ExternalOpener.shared.provide(openWindow)
@@ -132,13 +139,11 @@ struct AppCommands: Commands {
             Divider()
 
             // ⇧⌘V itself is handled by KeyWorkspace.installKeyboardShortcuts().
-            Button(workspace?.activeBuffer.flatMap { buffer in
-                buffer.isShowingPreview ? buffer.previewFormat.map { "Show \($0.sourceName)" } : nil
-            } ?? "Show Preview") {
+            Button(previewToggleTitle) {
                 workspace?.activeBuffer?.togglePreview()
             }
             .keyboardShortcut("v", modifiers: [.command, .shift])
-            .disabled(workspace?.activeBuffer?.canPreview != true)
+            .disabled(workspace?.activeBuffer?.previewFormat == nil)
 
             Divider()
 

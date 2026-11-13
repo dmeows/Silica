@@ -3,49 +3,23 @@ import SwiftUI
 import UniformTypeIdentifiers
 import WebKit
 
-/// The rendered view of one Markdown or HTML buffer, kept alive with its tab so
+/// The rendered view of one Markdown, CSV or HTML buffer, kept alive with its tab so
 /// switching back and forth is instant.
 ///
-/// A Markdown page is HTML from `MarkdownHTMLRenderer`, styled to match the editor and
-/// drawn on a transparent background so the glass card shows through. Scripts in the
-/// document itself never run; Silica's own small script (scroll position, double-click)
-/// runs in a separate script world. Relative images load from disk through the
-/// `silica-preview:` scheme, links to project files open in Silica, and web links open
-/// in the browser.
+/// A Markdown or CSV page is HTML from the format's renderer (`MarkdownHTMLRenderer`,
+/// `CSVHTMLRenderer`), styled to match the editor and drawn on a transparent
+/// background so the glass card shows through. Scripts in the document itself never
+/// run; Silica's own small script (scroll position, double-click) runs in a separate
+/// script world. Relative images load from disk through the `silica-preview:` scheme,
+/// links to project files open in Silica, and web links open in the browser.
 ///
 /// An HTML file is shown as a browser would show it: on its own background, with its
 /// scripts running and the keyboard going to the page. It loads as a `file:` page, so
 /// WebKit's rules for local files apply, as in Safari: the page can load the images,
 /// styles and scripts around it, but its scripts can't read local files. The
 /// `silica-preview:` scheme, which serves any file, isn't used for it.
-final class MarkdownPreview: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
-    enum Format {
-        case markdown
-        case html
-
-        /// The format a file previews as, if it has a preview.
-        init?(url: URL) {
-            if SyntaxLanguage(url: url) == .markdown {
-                self = .markdown
-            } else if ["html", "htm", "xhtml"].contains(url.pathExtension.lowercased()) {
-                // Not every file highlighted as HTML (Vue, Svelte) is a page.
-                self = .html
-            } else {
-                return nil
-            }
-        }
-
-        /// What the editor shows instead of the preview, e.g. "Show Markdown".
-        var sourceName: String {
-            switch self {
-            case .markdown: "Markdown"
-            case .html: "HTML"
-            }
-        }
-    }
-
+final class DocumentPreview: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
     let webView: PreviewWebView
-    let format: Format
 
     /// Opens another file in the project (a link to it was clicked).
     var onOpenFile: ((URL) -> Void)?
@@ -55,9 +29,11 @@ final class MarkdownPreview: NSObject, WKNavigationDelegate, WKScriptMessageHand
     var onType: ((String) -> Void)?
 
     private let fileURL: URL
+    private let format: PreviewFormat
     /// The folder an HTML page may load files from.
     private let readAccessURL: URL
     private var pendingLine: Int?
+    private var renderTask: Task<Void, Never>?
     /// HTML to show once the web content process may read `readAccessURL` (see `show(html:)`).
     private var pendingHTML: String?
     /// Where to scroll an HTML page to once it has loaded.
@@ -77,28 +53,27 @@ final class MarkdownPreview: NSObject, WKNavigationDelegate, WKScriptMessageHand
 
     /// `readAccessURL` is the folder an HTML page may load files from, which should
     /// contain `fileURL`; it defaults to the file's own folder.
-    init(fileURL: URL, format: Format, readAccessURL: URL? = nil) {
+    init(fileURL: URL, format: PreviewFormat, readAccessURL: URL? = nil) {
         self.fileURL = fileURL
         self.format = format
         self.readAccessURL = readAccessURL ?? fileURL.deletingLastPathComponent()
 
         let configuration = WKWebViewConfiguration()
-        switch format {
-        case .markdown:
+        if format == .html {
+            configuration.defaultWebpagePreferences.allowsContentJavaScript = true
+        } else {
             configuration.defaultWebpagePreferences.allowsContentJavaScript = false
             configuration.setURLSchemeHandler(LocalFileSchemeHandler(), forURLScheme: Self.scheme)
             configuration.userContentController.addUserScript(WKUserScript(
                 source: Self.script, injectionTime: .atDocumentEnd, forMainFrameOnly: true, in: .defaultClient
             ))
-        case .html:
-            configuration.defaultWebpagePreferences.allowsContentJavaScript = true
         }
         webView = PreviewWebView(frame: .zero, configuration: configuration)
         super.init()
         webView.navigationDelegate = self
 
         // An HTML page keeps the web view's own background, and the keyboard, as in a browser.
-        guard format == .markdown else { return }
+        guard format != .html else { return }
         // Through a weak proxy: the content controller retains its handlers.
         configuration.userContentController.add(WeakScriptHandler(self), contentWorld: .defaultClient, name: "silica")
         webView.underPageBackgroundColor = .clear
@@ -116,19 +91,26 @@ final class MarkdownPreview: NSObject, WKNavigationDelegate, WKScriptMessageHand
         webView.evaluateJavaScript("{ const style = document.querySelector('head > style'); if (style) style.textContent = \(css); }", in: nil, in: .defaultClient) { _ in }
     }
 
-    /// Shows the buffer's current text. `line` is where the editor is scrolled to.
-    func show(source: String, line: Int) {
-        switch format {
-        case .markdown: show(markdown: source, line: line)
-        case .html: show(html: source)
+    /// Renders the file's `text` and, once loaded, scrolls to the block nearest `line`.
+    /// An HTML page has no source lines to match, and comes back to where it was.
+    func show(_ text: String, line: Int) {
+        guard format != .html else {
+            show(html: text)
+            return
         }
-    }
-
-    /// Renders `markdown` and, once loaded, scrolls to the block nearest `line`.
-    private func show(markdown: String, line: Int) {
-        pendingLine = line
-        let body = MarkdownHTMLRenderer.render(markdown)
-        webView.loadHTMLString(Self.page(body: body), baseURL: baseURL)
+        // Off the main actor, as a large file takes a while to turn into HTML. A newer
+        // call takes over from one that is still rendering.
+        renderTask?.cancel()
+        renderTask = Task { [weak self, format] in
+            let body = await Task.detached(priority: .userInitiated) {
+                format.html(for: text)
+            }.value
+            guard let self, !Task.isCancelled else { return }
+            // Set with the load it belongs to, not before: a page still loading from
+            // an earlier call would take it when it finishes.
+            self.pendingLine = line
+            self.webView.loadHTMLString(Self.page(body: body, isTable: format.isTable), baseURL: self.baseURL)
+        }
     }
 
     /// Shows `html` as if it were the file. The text comes from the editor, not the
@@ -224,9 +206,10 @@ final class MarkdownPreview: NSObject, WKNavigationDelegate, WKScriptMessageHand
             // Only a click opens anything, not a page's script sending it elsewhere.
             guard navigationAction.navigationType == .linkActivated else { return }
             if url.isFileURL {
+                let target = URL(filePath: url.path(percentEncoded: false))
                 var isDirectory: ObjCBool = false
-                if FileManager.default.fileExists(atPath: url.path(percentEncoded: false), isDirectory: &isDirectory), !isDirectory.boolValue {
-                    onOpenFile?(URL(filePath: url.path(percentEncoded: false)))
+                if FileManager.default.fileExists(atPath: target.path(percentEncoded: false), isDirectory: &isDirectory), !isDirectory.boolValue {
+                    onOpenFile?(target)
                 }
             } else if ["http", "https", "mailto"].contains(url.scheme?.lowercased()) {
                 NSWorkspace.shared.open(url)
@@ -296,11 +279,11 @@ final class MarkdownPreview: NSObject, WKNavigationDelegate, WKScriptMessageHand
         return directory.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? directory
     }
 
-    private static func page(body: String) -> String {
+    private static func page(body: String, isTable: Bool) -> String {
         """
         <!doctype html>
         <html><head><meta charset="utf-8"><style>\(css)</style></head>
-        <body><article>\(body)</article></body></html>
+        <body\(isTable ? " class=\"csv\"" : "")><article>\(body)</article></body></html>
         """
     }
 
@@ -359,12 +342,25 @@ final class MarkdownPreview: NSObject, WKNavigationDelegate, WKScriptMessageHand
         th, td { border: 1px solid rgba(128, 128, 128, 0.3); padding: 6px 12px; }
         th { font-weight: 600; background: rgba(128, 128, 128, 0.08); }
         img { max-width: 100%; }
+        /* CSV: a table as wide as its columns. The page scrolls both ways, under a
+           header row that stays at the top. Borders are drawn per cell, as collapsed
+           ones don't move with a sticky row. */
+        .csv article { max-width: none; width: max-content; margin: 0; padding: 16px 20px 40px; }
+        .csv table { display: table; overflow: visible; border-collapse: separate; border-spacing: 0; font-size: 0.92em; line-height: 1.45; }
+        .csv th, .csv td { border-width: 0 1px 1px 0; padding: 5px 12px; vertical-align: top; }
+        .csv th > div, .csv td > div { max-width: 32em; overflow: hidden; text-overflow: ellipsis; white-space: pre; }
+        .csv tr > :first-child { border-left-width: 1px; }
+        .csv th { position: sticky; top: 0; border-top-width: 1px; text-align: left; background: rgba(244, 244, 245, 0.94); -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px); }
+        .csv .num { text-align: right; font-variant-numeric: tabular-nums; }
+        .note { color: rgba(0, 0, 0, 0.5); font-size: 0.92em; }
         ::selection { background: rgba(64, 120, 242, 0.25); }
         \(tokens.light)
         @media (prefers-color-scheme: dark) {
           body { color: rgba(255, 255, 255, 0.88); }
           a { color: \(hex(link.dark)); }
           blockquote { color: rgba(255, 255, 255, 0.6); }
+          .csv th { background: rgba(44, 44, 46, 0.94); }
+          .note { color: rgba(255, 255, 255, 0.5); }
           \(tokens.dark)
         }
         """
@@ -374,14 +370,25 @@ final class MarkdownPreview: NSObject, WKNavigationDelegate, WKScriptMessageHand
     private static let script = """
     window.silica = {
       blocks() { return Array.from(document.querySelectorAll('[data-line]')); },
+      // A CSV table's header row stays at the top, over the rows scrolled under it.
+      headerHeight() {
+        const header = document.querySelector('.csv thead');
+        return header ? header.getBoundingClientRect().height : 0;
+      },
       scrollToLine(line) {
         let target = null;
         const blocks = this.blocks();
         for (const el of blocks) { if (+el.dataset.line <= line) target = el; else break; }
-        if (target && target !== blocks[0]) target.scrollIntoView({ block: 'start' }); else window.scrollTo(0, 0);
+        const header = this.headerHeight();
+        if (!target || target === blocks[0]) window.scrollTo(0, 0);
+        else if (header) window.scrollTo(window.scrollX, window.scrollY + target.getBoundingClientRect().top - header);
+        else target.scrollIntoView({ block: 'start' });
       },
       topLine() {
-        for (const el of this.blocks()) { if (el.getBoundingClientRect().bottom > 1) return +el.dataset.line; }
+        // At the top, the source starts from its first line too, not the first block's.
+        if (window.scrollY < 1) return 1;
+        const top = this.headerHeight() + 1;
+        for (const el of this.blocks()) { if (el.getBoundingClientRect().bottom > top) return +el.dataset.line; }
         return 1;
       }
     };
@@ -439,8 +446,8 @@ private final class LocalFileSchemeHandler: NSObject, WKURLSchemeHandler {
 }
 
 /// Hosts a buffer's preview web view in the editor card.
-struct MarkdownPreviewHost: NSViewRepresentable {
-    let preview: MarkdownPreview
+struct PreviewHost: NSViewRepresentable {
+    let preview: DocumentPreview
 
     func makeNSView(context: Context) -> NSView {
         let container = NSView()

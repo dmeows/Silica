@@ -146,9 +146,38 @@ struct SidebarToggleButton: View {
         } label: {
             Image(systemName: "sidebar.left")
         }
-        // Same plain icon style as the Refresh and Collapse buttons in the sidebar header.
-        .buttonStyle(.borderless)
+        // Same icon style as the Collapse and Search buttons in the sidebar header.
+        .buttonStyle(.titleBarIcon)
         .foregroundStyle(.secondary)
         .help(workspace.isSidebarVisible ? "Hide Sidebar (⌃⌘S)" : "Show Sidebar (⌃⌘S)")
     }
+}
+
+/// A plain icon button for the title bar row that shows a soft rounded fill under
+/// the pointer, darker while pressed, like the toolbar buttons of system apps.
+struct TitleBarIconButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        IconLabel(configuration: configuration)
+    }
+
+    private struct IconLabel: View {
+        let configuration: Configuration
+        @State private var isHovering = false
+
+        var body: some View {
+            configuration.label
+                .frame(width: 26, height: 22)
+                .background(
+                    Color.primary.opacity(configuration.isPressed ? 0.14 : isHovering ? 0.08 : 0),
+                    in: .rect(cornerRadius: 6, style: .continuous)
+                )
+                .contentShape(.rect(cornerRadius: 6, style: .continuous))
+                .onHover { isHovering = $0 }
+                .animation(.easeOut(duration: 0.12), value: isHovering)
+        }
+    }
+}
+
+extension ButtonStyle where Self == TitleBarIconButtonStyle {
+    static var titleBarIcon: TitleBarIconButtonStyle { TitleBarIconButtonStyle() }
 }

@@ -21,12 +21,15 @@ Silica needs macOS 26 or later.
   Create, rename and move files to the Trash right in the tree, and filter it as you type.
 - **Quick Open and project search.** Jump to any file with fuzzy matching, or search
   the text of every file in the project.
-- **Syntax highlighting** for 25 languages, including Swift, JavaScript, TypeScript,
+- **Syntax highlighting** for 26 languages, including Swift, JavaScript, TypeScript,
   Python, Go, Rust, C, C++, Java, Kotlin, HTML, CSS, JSON, YAML and Markdown.
 - **Nine color themes**, each with a light and a dark palette: Atom One, GitHub,
   Xcode, Solarized, Catppuccin, Gruvbox, Tokyo Night, Rosé Pine and Dracula.
-- **Markdown and HTML preview.** Markdown renders with highlighted code blocks; HTML
-  files render as in a browser, with their styles, images and scripts.
+- **Markdown preview**, with highlighted code blocks.
+- **CSV preview.** See `.csv` and `.tsv` files as a table, and double-click a row to
+  edit it.
+- **HTML preview.** `.html` files render as in a browser, with their styles, images
+  and scripts.
 - **Editing tools.** Tabs, line numbers, indent guides, a minimap, word wrap, go to
   line, toggle comment, and moving or duplicating lines.
 - **Picks up where you left off.** Projects reopen their tabs, and recent projects
@@ -42,7 +45,7 @@ Silica needs macOS 26 or later.
 | ⇧⌘F | Find in Project |
 | ⌥⌘J | Filter files in the tree |
 | ⌘L | Go to Line |
-| ⇧⌘V | Toggle the Markdown or HTML preview |
+| ⇧⌘V | Toggle Markdown, CSV or HTML preview |
 | ⌃⌘S | Show or hide the sidebar |
 | ⌘/ | Toggle comment |
 | ⌥↑ / ⌥↓ | Move lines up or down |

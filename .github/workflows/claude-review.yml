@@ -49,6 +49,10 @@ jobs:
           path: pr-head
           fetch-depth: 1
           persist-credentials: false
+          # actions/checkout refuses to fetch a fork's code in a
+          # `pull_request_target` run unless told to. It's safe here because
+          # nothing in pr-head/ is built or run: the files are only read.
+          allow-unsafe-pr-checkout: true
 
       - name: Review with Claude
         uses: anthropics/claude-code-action@v1
