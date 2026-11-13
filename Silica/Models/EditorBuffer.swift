@@ -3,6 +3,7 @@ import CryptoKit
 import Foundation
 import ImageIO
 import Observation
+import PDFKit
 import UniformTypeIdentifiers
 
 /// One open file. Text files own a live `TextController` so each tab keeps
@@ -12,6 +13,7 @@ final class EditorBuffer: Identifiable {
     enum Content {
         case text(TextController)
         case image(ImageFile)
+        case pdf(PDFFile)
         case binary
         case tooLarge(Int64)
         case unreadable(String)
@@ -65,8 +67,46 @@ final class EditorBuffer: Identifiable {
         let format: String
     }
 
+    /// A PDF shown read-only in the editor card. The tab owns the view, so it keeps
+    /// its place and zoom while other tabs are shown.
+    @Observable
+    final class PDFFile {
+        let view: PDFView
+        let byteCount: Int64
+        /// A password-protected PDF has no pages to show until it's unlocked.
+        private(set) var isLocked: Bool
+        private(set) var pageCount: Int
+        private let document: PDFDocument
+
+        init(document: PDFDocument, byteCount: Int64) {
+            self.document = document
+            self.byteCount = byteCount
+            isLocked = document.isLocked
+            pageCount = document.pageCount
+            view = PDFView()
+            view.displayMode = .singlePageContinuous
+            // Fits the page width to the card until the reader zooms.
+            view.autoScales = true
+            // The pages lie on the card's glass, like images do.
+            view.backgroundColor = .clear
+            // The view gets a locked document only once it's unlocked, so what a
+            // protected PDF shows is Silica's own prompt and never an empty card.
+            if !document.isLocked { view.document = document }
+        }
+
+        /// Returns whether the password was right; the pages show once it is.
+        func unlock(with password: String) -> Bool {
+            guard document.unlock(withPassword: password) else { return false }
+            view.document = document
+            pageCount = document.pageCount
+            isLocked = false
+            return true
+        }
+    }
+
     private static let maxFileSize: Int64 = 20 * 1024 * 1024
-    private static let maxImageSize: Int64 = 200 * 1024 * 1024
+    /// For images and PDFs, which are shown rather than loaded into the editor.
+    private static let maxPreviewSize: Int64 = 200 * 1024 * 1024
 
     /// An empty, untitled file, e.g. "Untitled-1".
     init(untitledName name: String) {
@@ -97,15 +137,18 @@ final class EditorBuffer: Identifiable {
         let attributes = Self.attributes(of: url)
         let size = Int64(attributes?.size ?? 0)
 
-        if Self.isImage(url) {
+        let isImage = Self.isImage(url)
+        if isImage || Self.isPDF(url) {
             encoding = .utf8
             diskSnapshot = attributes.map { DiskSnapshot(attributes: $0, digest: nil) }
-            if size > Self.maxImageSize {
+            if size > Self.maxPreviewSize {
                 content = .tooLarge(size)
-            } else if let image = Self.loadImage(url, byteCount: size) {
-                content = .image(image)
+            } else if isImage {
+                content = Self.loadImage(url, byteCount: size).map(Content.image)
+                    ?? .unreadable("“\(url.lastPathComponent)” couldn’t be decoded as an image.")
             } else {
-                content = .unreadable("“\(url.lastPathComponent)” couldn’t be decoded as an image.")
+                content = Self.loadPDF(url, byteCount: size).map(Content.pdf)
+                    ?? .unreadable("“\(url.lastPathComponent)” couldn’t be read as a PDF.")
             }
             return
         }
@@ -378,6 +421,14 @@ final class EditorBuffer: Identifiable {
             }
         }
         return ImageFile(image: image, pixelSize: pixelSize, byteCount: byteCount, format: format)
+    }
+
+    private static func isPDF(_ url: URL) -> Bool {
+        UTType(filenameExtension: url.pathExtension)?.conforms(to: .pdf) == true
+    }
+
+    private static func loadPDF(_ url: URL, byteCount: Int64) -> PDFFile? {
+        PDFDocument(url: url).map { PDFFile(document: $0, byteCount: byteCount) }
     }
 
     private static func looksBinary(_ data: Data) -> Bool {
