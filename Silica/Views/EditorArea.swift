@@ -1,3 +1,4 @@
+import PDFKit
 import SwiftUI
 
 struct EditorArea: View {
@@ -469,6 +470,8 @@ private struct BufferView: View {
             }
         case .image(let file):
             ImagePreview(file: file)
+        case .pdf(let file):
+            PDFPreview(file: file)
         case .binary:
             ContentUnavailableView(
                 "Binary File",
@@ -608,6 +611,64 @@ private struct Checkerboard: View {
                     context.fill(Path(rect), with: .color(.primary.opacity(0.06)))
                 }
             }
+        }
+    }
+}
+
+// MARK: - PDF
+
+/// Shows a PDF's pages in the editor card, with its page count and size over the
+/// corner where text files have their status bar.
+private struct PDFPreview: View {
+    let file: EditorBuffer.PDFFile
+
+    var body: some View {
+        PDFViewHost(pdfView: file.view)
+            .overlay(alignment: .bottomTrailing) {
+                Text(details)
+                    .font(.caption)
+                    .monospacedDigit()
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 4)
+                    .glassEffect(.regular, in: .capsule)
+                    .fixedSize()
+                    .padding(4)
+            }
+    }
+
+    private var details: String {
+        let pages = file.pageCount == 1 ? "1 page" : "\(file.pageCount) pages"
+        return [pages, file.byteCount.formatted(.byteCount(style: .file))].joined(separator: "  ·  ")
+    }
+}
+
+/// Hosts whichever PDF tab's view is active.
+private struct PDFViewHost: NSViewRepresentable {
+    let pdfView: PDFView
+
+    func makeNSView(context: Context) -> NSView {
+        let container = NSView()
+        attach(to: container)
+        return container
+    }
+
+    func updateNSView(_ container: NSView, context: Context) {
+        if pdfView.superview !== container {
+            container.subviews.forEach { $0.removeFromSuperview() }
+            attach(to: container)
+        }
+    }
+
+    private func attach(to container: NSView) {
+        pdfView.removeFromSuperview()
+        pdfView.frame = container.bounds
+        pdfView.autoresizingMask = [.width, .height]
+        container.addSubview(pdfView)
+        // So the arrow keys, Page Up and Page Down scroll it straight away.
+        DispatchQueue.main.async { [pdfView] in
+            pdfView.window?.makeFirstResponder(pdfView)
         }
     }
 }

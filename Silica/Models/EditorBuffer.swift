@@ -3,6 +3,7 @@ import CryptoKit
 import Foundation
 import ImageIO
 import Observation
+import PDFKit
 import UniformTypeIdentifiers
 
 /// One open file. Text files own a live `TextController` so each tab keeps
@@ -12,6 +13,7 @@ final class EditorBuffer: Identifiable {
     enum Content {
         case text(TextController)
         case image(ImageFile)
+        case pdf(PDFFile)
         case binary
         case tooLarge(Int64)
         case unreadable(String)
@@ -65,8 +67,17 @@ final class EditorBuffer: Identifiable {
         let format: String
     }
 
+    /// A PDF shown read-only in the editor card. The tab owns the view, so it keeps
+    /// its place and zoom while other tabs are shown.
+    struct PDFFile {
+        let view: PDFView
+        let pageCount: Int
+        let byteCount: Int64
+    }
+
     private static let maxFileSize: Int64 = 20 * 1024 * 1024
-    private static let maxImageSize: Int64 = 200 * 1024 * 1024
+    /// For images and PDFs, which are shown rather than loaded into the editor.
+    private static let maxPreviewSize: Int64 = 200 * 1024 * 1024
 
     /// An empty, untitled file, e.g. "Untitled-1".
     init(untitledName name: String) {
@@ -97,15 +108,18 @@ final class EditorBuffer: Identifiable {
         let attributes = Self.attributes(of: url)
         let size = Int64(attributes?.size ?? 0)
 
-        if Self.isImage(url) {
+        let isImage = Self.isImage(url)
+        if isImage || Self.isPDF(url) {
             encoding = .utf8
             diskSnapshot = attributes.map { DiskSnapshot(attributes: $0, digest: nil) }
-            if size > Self.maxImageSize {
+            if size > Self.maxPreviewSize {
                 content = .tooLarge(size)
-            } else if let image = Self.loadImage(url, byteCount: size) {
-                content = .image(image)
+            } else if isImage {
+                content = Self.loadImage(url, byteCount: size).map(Content.image)
+                    ?? .unreadable("“\(url.lastPathComponent)” couldn’t be decoded as an image.")
             } else {
-                content = .unreadable("“\(url.lastPathComponent)” couldn’t be decoded as an image.")
+                content = Self.loadPDF(url, byteCount: size).map(Content.pdf)
+                    ?? .unreadable("“\(url.lastPathComponent)” couldn’t be read as a PDF.")
             }
             return
         }
@@ -378,6 +392,22 @@ final class EditorBuffer: Identifiable {
             }
         }
         return ImageFile(image: image, pixelSize: pixelSize, byteCount: byteCount, format: format)
+    }
+
+    private static func isPDF(_ url: URL) -> Bool {
+        UTType(filenameExtension: url.pathExtension)?.conforms(to: .pdf) == true
+    }
+
+    private static func loadPDF(_ url: URL, byteCount: Int64) -> PDFFile? {
+        guard let document = PDFDocument(url: url) else { return nil }
+        let view = PDFView()
+        view.document = document
+        view.displayMode = .singlePageContinuous
+        // Fits the page width to the card until the reader zooms.
+        view.autoScales = true
+        // The pages lie on the card's glass, like images do.
+        view.backgroundColor = .clear
+        return PDFFile(view: view, pageCount: document.pageCount, byteCount: byteCount)
     }
 
     private static func looksBinary(_ data: Data) -> Bool {
