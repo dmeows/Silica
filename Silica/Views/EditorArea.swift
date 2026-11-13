@@ -385,8 +385,10 @@ private struct MiddleClickClosesTab: NSViewRepresentable {
             guard event.buttonNumber == 2 else { return }
             let point = convert(event.locationInWindow, from: nil)
             // The view covers the part of the row that shows, so tabs scrolled out
-            // of the bar can't be hit.
-            let hit = event.window === window && bounds.contains(point) ? tab(point.x) : nil
+            // of the bar can't be hit. The monitor sees clicks before the window turns
+            // them away, so a sheet or an alert has to rule them out here.
+            let isBlocked = window?.attachedSheet != nil || NSApp.modalWindow != nil
+            let hit = event.window === window && !isBlocked && bounds.contains(point) ? tab(point.x) : nil
             if event.type == .otherMouseDown {
                 pressed = hit
                 return
