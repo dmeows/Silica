@@ -134,6 +134,11 @@ private struct EditorTabBar: View {
             // A tab scrolled part of the way out fades away rather than ending in a cut.
             .mask { fadeMask }
             .background(WheelScrollsSideways())
+            .background(
+                MiddleClickClosesTab(tab: tab(at:)) { url in
+                    withAnimation(.snappy) { workspace.closeTab(url) }
+                }
+            )
             .coordinateSpace(Self.space)
             .onChange(of: workspace.activeTab) { _, active in
                 if let active {
@@ -240,6 +245,20 @@ private struct EditorTabBar: View {
         scrollOffset = target
     }
 
+    /// The tab at a horizontal position in the bar, if there's one: the gaps between
+    /// tabs and the empty end of the row have none.
+    private func tab(at x: CGFloat) -> URL? {
+        // The tabs are out of their places during a drag.
+        guard drag == nil else { return nil }
+        var leading = Self.inset - scrollOffset
+        for url in workspace.openTabs {
+            let width = tabWidths[url] ?? 0
+            if x >= leading && x < leading + width { return url }
+            leading += width + Self.spacing
+        }
+        return nil
+    }
+
     /// Where the dragged tab would land if dropped now, and how far each tab sits from
     /// its place in the row meanwhile: the dragged one follows the pointer, and the
     /// tabs it has passed step aside by its width. The order itself changes on drop.
@@ -314,6 +333,69 @@ private struct WheelScrollsSideways: NSViewRepresentable {
         func stopWatching() {
             if let monitor { NSEvent.removeMonitor(monitor) }
             monitor = nil
+        }
+    }
+}
+
+/// Closes the tab that the middle mouse button is clicked on, as browsers and other
+/// editors do. SwiftUI has no gesture for that button, so the bar watches for it.
+private struct MiddleClickClosesTab: NSViewRepresentable {
+    /// The tab at a horizontal position in the bar, if there's one.
+    let tab: (CGFloat) -> URL?
+    let close: (URL) -> Void
+
+    func makeNSView(context: Context) -> AnchorView { AnchorView() }
+
+    func updateNSView(_ nsView: AnchorView, context: Context) {
+        nsView.tab = tab
+        nsView.close = close
+    }
+
+    static func dismantleNSView(_ nsView: AnchorView, coordinator: ()) {
+        nsView.stopWatching()
+    }
+
+    /// Marks where the bar is in its window, behind the row.
+    final class AnchorView: NSView {
+        var tab: (CGFloat) -> URL? = { _ in nil }
+        var close: (URL) -> Void = { _ in }
+
+        private var monitor: Any?
+        /// The tab the button went down on: it closes if the button comes up on it too.
+        private var pressed: URL?
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            stopWatching()
+            guard window != nil else { return }
+            monitor = NSEvent.addLocalMonitorForEvents(matching: [.otherMouseDown, .otherMouseUp]) { [weak self] event in
+                self?.handle(event)
+                return event
+            }
+        }
+
+        func stopWatching() {
+            if let monitor { NSEvent.removeMonitor(monitor) }
+            monitor = nil
+            pressed = nil
+        }
+
+        private func handle(_ event: NSEvent) {
+            // Button 2 is the middle one; a mouse's further buttons are left alone.
+            guard event.buttonNumber == 2 else { return }
+            let point = convert(event.locationInWindow, from: nil)
+            // The view covers the part of the row that shows, so tabs scrolled out
+            // of the bar can't be hit.
+            let hit = event.window === window && bounds.contains(point) ? tab(point.x) : nil
+            if event.type == .otherMouseDown {
+                pressed = hit
+                return
+            }
+            defer { pressed = nil }
+            guard let hit, hit == pressed else { return }
+            // After the event is through: closing a tab with unsaved changes asks
+            // about them in an alert, which shouldn't run inside the monitor.
+            DispatchQueue.main.async { [weak self] in self?.close(hit) }
         }
     }
 }
