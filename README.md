@@ -21,7 +21,7 @@ Silica needs macOS 26 or later.
   Create, rename and move files to the Trash right in the tree, and filter it as you type.
 - **Quick Open and project search.** Jump to any file with fuzzy matching, or search
   the text of every file in the project.
-- **Syntax highlighting** for 25 languages, including Swift, JavaScript, TypeScript,
+- **Syntax highlighting** for 26 languages, including Swift, JavaScript, TypeScript,
   Python, Go, Rust, C, C++, Java, Kotlin, HTML, CSS, JSON, YAML and Markdown.
 - **Nine color themes**, each with a light and a dark palette: Atom One, GitHub,
   Xcode, Solarized, Catppuccin, Gruvbox, Tokyo Night, Rosé Pine and Dracula.
