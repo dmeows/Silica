@@ -14,8 +14,8 @@ struct EditorArea: View {
                 }
                 EditorTabBar(workspace: workspace)
                 Spacer(minLength: 0)
-                if let buffer = workspace.activeBuffer, buffer.isMarkdown {
-                    MarkdownModeToggle(buffer: buffer)
+                if let buffer = workspace.activeBuffer, let format = buffer.previewFormat {
+                    PreviewModeToggle(buffer: buffer, format: format)
                         .padding(.trailing, WorkspaceLayout.cardInset + 4)
                 }
             }
@@ -457,7 +457,7 @@ private struct BufferView: View {
         switch buffer.content {
         case .text(let controller):
             if buffer.isShowingPreview, let preview = buffer.preview {
-                MarkdownPreviewHost(preview: preview)
+                PreviewHost(preview: preview)
             } else {
                 // The status bar floats over the text's bottom corner rather than
                 // taking a strip of the card, left of the minimap when it's shown.
@@ -531,16 +531,17 @@ private struct StatusBar: View {
     }
 }
 
-// MARK: - Markdown
+// MARK: - Preview
 
-/// Source / Preview switch for Markdown tabs, in the quiet icon style of the other
-/// title bar buttons; the current mode is drawn in the primary color on a soft fill.
-private struct MarkdownModeToggle: View {
+/// Source / Preview switch for Markdown and CSV tabs, in the quiet icon style of the
+/// other title bar buttons; the current mode is drawn in the primary color on a soft fill.
+private struct PreviewModeToggle: View {
     let buffer: EditorBuffer
+    let format: PreviewFormat
 
     var body: some View {
         HStack(spacing: 2) {
-            option("doc.plaintext", help: "Show Markdown (⇧⌘V)", isOn: !buffer.isShowingPreview) {
+            option("doc.plaintext", help: "Show \(format.sourceName) (⇧⌘V)", isOn: !buffer.isShowingPreview) {
                 buffer.setShowingPreview(false)
             }
             option("eye", help: "Show Preview (⇧⌘V)", isOn: buffer.isShowingPreview) {
