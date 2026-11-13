@@ -87,6 +87,7 @@ struct FileTreeView: View {
             List(selection: $workspace.selection) {
                 if rows.isEmpty {
                     Text(workspace.isFilteringTree ? "No files match “\(workspace.treeFilter)”" : "This project is empty")
+                        .font(.system(size: EditorSettings.shared.sidebarFontSize))
                         .foregroundStyle(.secondary)
                         .selectionDisabled()
                 } else {
@@ -133,9 +134,9 @@ struct FileTreeView: View {
                 Button("New File…") { workspace.beginNewItem(isDirectory: false, in: workspace.rootURL) }
                 Button("New Folder…") { workspace.beginNewItem(isDirectory: true, in: workspace.rootURL) }
             }
-            // Compact, editor-style rows.
+            // Compact, editor-style rows, 22pt high at the default font size.
             .environment(\.sidebarRowSize, .small)
-            .environment(\.defaultMinListRowHeight, 22)
+            .environment(\.defaultMinListRowHeight, EditorSettings.shared.sidebarFontSize + 11)
             // The sidebar list style has a fixed top inset that content margins don't
             // change. Pull the list up by most of it and clip, so rows start closer to
             // the title bar and scrolled rows still disappear at its bottom edge.
@@ -288,8 +289,6 @@ private struct PinnedFolders: View {
                 }
             }
         }
-        // The text size of the list's small sidebar rows.
-        .font(.subheadline)
         // A hairline between the pinned folders and the rows scrolling under them.
         .overlay(alignment: .top) {
             if !tracker.pinned.isEmpty {
@@ -418,7 +417,8 @@ private struct FileNodeRow: View {
         HStack(spacing: 4) {
             disclosureChevron
             Group {
-                FileIcon(url: node.url, isDirectory: node.isDirectory, isExpanded: isOpen)
+                FileIcon(url: node.url, isDirectory: node.isDirectory, isExpanded: isOpen,
+                         width: EditorSettings.shared.sidebarIconWidth)
                     .padding(.trailing, 2)
                 if isRenaming {
                     NameField(initialName: node.name, selectsExtension: node.isDirectory) { name in
@@ -441,6 +441,7 @@ private struct FileNodeRow: View {
             }
         }
         .padding(.leading, Self.leadingPadding(depth: depth))
+        .font(.system(size: EditorSettings.shared.sidebarFontSize))
         .tag(node.url)
         .listRowBackground(SelectionHighlight(isSelected: workspace.selection == node.url))
         .contextMenu { FileNodeMenu(node: node, workspace: workspace) }
@@ -566,7 +567,8 @@ private struct NewItemRow: View {
     var body: some View {
         HStack(spacing: 4) {
             Color.clear.frame(width: 12, height: 16)
-            FileIcon(url: folder.appending(path: "untitled"), isDirectory: isDirectory)
+            FileIcon(url: folder.appending(path: "untitled"), isDirectory: isDirectory,
+                     width: EditorSettings.shared.sidebarIconWidth)
                 .padding(.trailing, 2)
             NameField(initialName: "", selectsExtension: true) { name in
                 if let name {
@@ -577,6 +579,7 @@ private struct NewItemRow: View {
             }
         }
         .padding(.leading, FileNodeRow.leadingPadding(depth: depth))
+        .font(.system(size: EditorSettings.shared.sidebarFontSize))
     }
 }
 
